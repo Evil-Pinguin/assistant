@@ -360,6 +360,17 @@ def check_logic():
                                  "online": True}, streak3, True)
     report("Монитор: CPU — только после двух проверок подряд",
            "cpu_high" not in codes3 and "cpu_high" in codes4)
+    # регрессия: KeyError 'disk' убивал поток монитора
+    from aura.context import ALERT_TEXTS
+    fmt_all = {"cpu": 50.0, "ram": 95.0, "ram_used": 8.1, "ram_total": 16.0,
+               "disk_free_pct": 9.0, "online": False}
+    try:
+        for tpl in ALERT_TEXTS.values():
+            tpl.format(**fmt_all)
+        ok_tpl = True
+    except Exception:
+        ok_tpl = False
+    report("Монитор: шаблоны алертов форматируются без KeyError", ok_tpl)
 
     # ================= планировщик =================
     from aura.planner import Planner, split_sequence

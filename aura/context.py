@@ -35,7 +35,7 @@ DEICTIC = {"это", "эту", "этот", "тут", "текущее", "теку
 ALERT_TEXTS = {
     "ram_high": "Память занята на {ram:.0f} процентов. Могу найти процессы, которые её потребляют.",
     "cpu_high": "Процессор под нагрузкой {cpu:.0f} процентов уже несколько минут.",
-    "disk_low": "На системном диске осталось меньше {disk:.0f} процентов свободного места.",
+    "disk_low": "На системном диске осталось меньше {disk_free_pct:.0f} процентов свободного места.",
     "net_lost": "Похоже, пропал интернет.",
 }
 
@@ -383,29 +383,36 @@ class ContextEngine:
     def _monitor_loop(self):
         while not self._stop.wait(self._interval):
             try:
-                stats = self.system()
+                self._monitor_once()
             except Exception:
+                continue    # разовый сбой не должен убивать монитор
+
+    def _monitor_once(self):
+        stats = self.system()
+        th = {
+            "ram_alert_pct": self._cfg("ram_alert_pct", 90),
+            "cpu_alert_pct": self._cfg("cpu_alert_pct", 92),
+            "disk_alert_pct_free": self._cfg("disk_alert_pct_free", 10),
+        }
+        codes, self._cpu_streak = evaluate_alerts(
+            stats, self._cpu_streak, self._was_online, th)
+        if stats.get("online") is not None:
+            self._was_online = stats.get("online")
+        fmt = {k: (v if isinstance(v, (int, float)) else 0)
+               for k, v in stats.items()}
+        now = time.time()
+        for code in codes:
+            if now - self._alerts_at.get(code, 0) < self.COOLDOWN_SEC:
                 continue
-            th = {
-                "ram_alert_pct": self._cfg("ram_alert_pct", 90),
-                "cpu_alert_pct": self._cfg("cpu_alert_pct", 92),
-                "disk_alert_pct_free": self._cfg("disk_alert_pct_free", 10),
-            }
-            codes, self._cpu_streak = evaluate_alerts(
-                stats, self._cpu_streak, self._was_online, th)
-            if stats.get("online") is not None:
-                self._was_online = stats.get("online")
-            fmt = {k: (v if isinstance(v, (int, float)) else 0)
-                   for k, v in stats.items()}
-            now = time.time()
-            for code in codes:
-                if now - self._alerts_at.get(code, 0) < self.COOLDOWN_SEC:
-                    continue
-                self._alerts_at[code] = now
-                text = ALERT_TEXTS.get(code, code).format(**fmt)
-                self.emit("proactive", code=code, text=text)
-                if self.on_alert:
-                    try:
-                        self.on_alert(code, text)
-                    except Exception:
-                        pass
+            self._alerts_at[code] = now
+            tpl = ALERT_TEXTS.get(code, code)
+            try:
+                text = tpl.format(**fmt)
+            except Exception:
+                text = tpl  # ошибка в шаблоне не роняет монитор
+            self.emit("proactive", code=code, text=text)
+            if self.on_alert:
+                try:
+                    self.on_alert(code, text)
+                except Exception:
+                    pass
