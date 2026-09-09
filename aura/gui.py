@@ -14,9 +14,12 @@ from PySide6.QtWidgets import (
     QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QMainWindow, QPlainTextEdit, QProgressBar,
     QPushButton, QScrollArea, QSlider, QSpinBox, QTabWidget, QTableWidget,
-    QTableWidgetItem, QTextBrowser, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
-    QSizePolicy,
+    QTableWidgetItem, QTextBrowser, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
+    QWidget, QSizePolicy,
 )
+
+from .face_avatar import FaceImageWidget
+from .face_qt import FaceWidget
 
 from .face_qt import FaceWidget
 
@@ -379,7 +382,10 @@ class MainWindow(QMainWindow):
         left.setFixedWidth(380)
         lv = QVBoxLayout(left)
         lv.setContentsMargins(14, 14, 14, 12)
-        self.face = FaceWidget()
+        if FaceImageWidget.images_available():
+            self.face = FaceImageWidget()      # портрет-аватар (SIGNALIS-стиль)
+        else:
+            self.face = FaceWidget()           # рисованный HUD-вариант
         self.face.setMinimumHeight(330)
         lv.addWidget(self.face, 1)
         self.state_label = QLabel("Запуск…")
@@ -991,6 +997,9 @@ class MainWindow(QMainWindow):
             self._toggle_mic(True)
 
     def _toggle_mic(self, on):
+        if self.ear is None:
+            self._chat_line("error", "Микрофон недоступен (компонент не инициализирован).")
+            return
         if on:
             ok = self.ear.start()
             self._chat_line("system", "Микрофон включается…" if ok else
