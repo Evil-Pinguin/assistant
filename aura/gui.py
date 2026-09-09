@@ -76,61 +76,68 @@ ACTION_ORDER = list(ACTION_DEFS.keys())
 
 STYLESHEET = f"""
 QMainWindow, QWidget {{ background: {BG}; color: {FG};
-    font-family: 'Segoe UI', 'Ubuntu', sans-serif; font-size: 10pt; }}
-QLabel#title {{ font-size: 17pt; font-weight: 800; color: {ACCENT};
-    letter-spacing: 3px; }}
-QLabel#dim {{ color: {FG_DIM}; }}
+    font-family: 'Inter', 'Segoe UI', 'Ubuntu', sans-serif; font-size: 10pt; }}
+QLabel#title {{ font-size: 15pt; font-weight: 300; color: {FG};
+    letter-spacing: 12px; }}
+QLabel#dim {{ color: {FG_DIM}; font-size: 9pt; }}
 QLabel#accent {{ color: {ACCENT}; }}
 QLabel#ok {{ color: {OK}; }}
 QLabel#err {{ color: {ERR}; }}
-QFrame#panel, QGroupBox {{ background: {PANEL}; border: 1px solid {LINE};
-    border-radius: 12px; }}
-QGroupBox {{ margin-top: 12px; padding-top: 6px; }}
-QGroupBox::title {{ subcontrol-origin: margin; left: 12px; color: {ACCENT}; }}
-QTabWidget::pane {{ border: 1px solid {LINE}; border-radius: 10px; top: -1px; }}
-QTabBar::tab {{ background: {PANEL2}; color: {FG_DIM}; padding: 8px 14px;
-    border-top-left-radius: 9px; border-top-right-radius: 9px; margin-right: 2px; }}
-QTabBar::tab:selected {{ background: {FIELD}; color: {ACCENT}; }}
-QLineEdit, QPlainTextEdit, QTextEdit, QTextBrowser, QSpinBox, QDoubleSpinBox {{
+QLabel#bigstate {{ font-size: 14pt; font-weight: 600; letter-spacing: 4px; }}
+QLabel#quote {{ color: {FG_DIM}; font-size: 10pt; font-style: italic; }}
+QFrame#panel {{ background: transparent; border: none; }}
+QFrame#panelLine {{ border: none; border-top: 1px solid {LINE}; }}
+QTabWidget::pane {{ border: none; top: -1px; }}
+QTabBar::tab {{ background: transparent; color: {FG_DIM}; padding: 7px 12px;
+    border: none; font-size: 9pt; letter-spacing: 1px; }}
+QTabBar::tab:selected {{ color: {ACCENT}; border-bottom: 2px solid {ACCENT}; }}
+QLineEdit, QPlainTextEdit, QTextEdit, QTextBrowser, QSpinBox {{
     background: {FIELD}; border: 1px solid {LINE}; border-radius: 8px;
     padding: 6px; color: {FG}; selection-background-color: {ACCENT}; }}
+QTextBrowser {{ background: transparent; border: none; }}
 QComboBox {{ background: {FIELD}; border: 1px solid {LINE}; border-radius: 8px;
     padding: 5px 10px; color: {FG}; }}
 QComboBox QAbstractItemView {{ background: {PANEL}; color: {FG};
     selection-background-color: {ACCENT}; selection-color: #04121a; }}
-QPushButton {{ background: {FIELD}; border: 1px solid {LINE}; border-radius: 8px;
-    padding: 7px 14px; color: {FG}; }}
+QPushButton {{ background: transparent; border: 1px solid {LINE};
+    border-radius: 16px; padding: 6px 16px; color: {FG_DIM}; }}
 QPushButton:hover {{ border-color: {ACCENT}; color: {ACCENT}; }}
-QPushButton:pressed {{ background: {PANEL}; }}
+QPushButton:pressed {{ background: {FIELD}; }}
 QPushButton#accent {{ background: {ACCENT}; color: #04121a; font-weight: 700;
-    border: none; }}
+    border: none; border-radius: 16px; }}
 QPushButton#accent:hover {{ background: #67e8f9; color: #04121a; }}
+QPushButton#ghost {{ border: none; color: {FG_DIM}; font-size: 9pt; }}
+QPushButton#ghost:hover {{ color: {ACCENT}; }}
 QPushButton#danger {{ color: {ERR}; }}
-QPushButton:checked {{ border-color: {ACCENT}; color: {ACCENT};
-    background: {PANEL}; }}
-QListWidget, QTreeWidget, QTableWidget {{ background: {PANEL};
-    border: 1px solid {LINE}; border-radius: 10px; padding: 4px; }}
-QListWidget::item, QTreeWidget::item {{ padding: 5px; border-radius: 6px; }}
+QPushButton:checked {{ border-color: {ACCENT}; color: {ACCENT}; }}
+QListWidget, QTreeWidget, QTableWidget {{ background: transparent;
+    border: none; padding: 2px; }}
+QListWidget::item, QTreeWidget::item {{ padding: 4px; border-radius: 6px; }}
 QListWidget::item:selected, QTreeWidget::item:selected {{
-    background: {ACCENT}; color: #04121a; }}
-QHeaderView::section {{ background: {PANEL2}; color: {FG_DIM}; border: none;
-    padding: 6px; }}
-QProgressBar {{ background: {FIELD}; border: 1px solid {LINE}; border-radius: 7px;
-    text-align: center; color: {FG}; height: 14px; }}
-QProgressBar::chunk {{ background: {ACCENT}; border-radius: 6px; }}
-QSlider::groove:horizontal {{ height: 6px; background: {FIELD};
-    border-radius: 3px; }}
-QSlider::handle:horizontal {{ width: 16px; margin: -6px 0; background: {ACCENT};
-    border-radius: 8px; }}
-QScrollBar:vertical {{ background: {BG}; width: 10px; border-radius: 5px; }}
-QScrollBar::handle:vertical {{ background: {FIELD}; border-radius: 5px;
+    background: {FIELD}; color: {ACCENT}; }}
+QHeaderView::section {{ background: transparent; color: {FG_DIM}; border: none;
+    padding: 4px; font-size: 8pt; letter-spacing: 1px; }}
+QProgressBar {{ background: {FIELD}; border: none; border-radius: 2px;
+    text-align: center; color: {FG}; height: 4px; }}
+QProgressBar::chunk {{ background: {ACCENT}; border-radius: 2px; }}
+QSlider::groove:horizontal {{ height: 4px; background: {FIELD};
+    border-radius: 2px; }}
+QSlider::handle:horizontal {{ width: 14px; margin: -6px 0; background: {ACCENT};
+    border-radius: 7px; }}
+QScrollBar:vertical {{ background: transparent; width: 8px; }}
+QScrollBar::handle:vertical {{ background: {FIELD}; border-radius: 4px;
     min-height: 30px; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
 QCheckBox {{ spacing: 8px; }}
-QCheckBox::indicator {{ width: 17px; height: 17px; border-radius: 5px;
+QCheckBox::indicator {{ width: 16px; height: 16px; border-radius: 5px;
     border: 1px solid {LINE}; background: {FIELD}; }}
 QCheckBox::indicator:checked {{ background: {ACCENT}; border-color: {ACCENT}; }}
+QGroupBox {{ background: transparent; border: none; margin-top: 14px;
+    padding-top: 4px; font-size: 9pt; letter-spacing: 1px; color: {FG_DIM};
+    font-weight: 600; }}
+QGroupBox::title {{ subcontrol-origin: margin; left: 2px; color: {ACCENT}; }}
 """
+
 
 
 # ==========================================================================
@@ -337,180 +344,214 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
-        root.setContentsMargins(10, 8, 10, 10)
-        root.setSpacing(8)
+        root.setContentsMargins(18, 10, 18, 12)
+        root.setSpacing(0)
 
-        # ------------------- шапка -------------------
-        head = QFrame()
-        head.setObjectName("panel")
-        h = QHBoxLayout(head)
-        h.setContentsMargins(16, 8, 16, 8)
-        title = QLabel("A U R A")
+        # ------------------- шапка: AURA ● ONLINE -------------------
+        head = QHBoxLayout()
+        head.setContentsMargins(4, 0, 4, 6)
+        title = QLabel("AURA")
         title.setObjectName("title")
-        h.addWidget(title)
-        sub = QLabel("· АВРОРА · personal AI")
+        head.addWidget(title)
+        sub = QLabel("· АВРОРА")
         sub.setObjectName("dim")
-        h.addWidget(sub)
-        h.addSpacing(14)
+        head.addWidget(sub)
+        head.addStretch(1)
+        self.perm_badge = QLabel("")
+        self.perm_badge.setObjectName("dim")
+        head.addWidget(self.perm_badge)
         self.dot = QLabel("●")
         self.dot.setObjectName("dim")
-        h.addWidget(self.dot)
-        self.status = QLabel("инициализация…")
+        head.addWidget(self.dot)
+        self.status = QLabel("SYSTEM ONLINE")
         self.status.setObjectName("dim")
-        h.addWidget(self.status)
-        h.addStretch(1)
-        self.perm_badge = QLabel("")
-        self.perm_badge.setObjectName("accent")
-        h.addWidget(self.perm_badge)
-        self.stats = StatLabel()
-        h.addWidget(self.stats)
-        self.mic_btn = QPushButton("🎙 Микрофон")
+        head.addWidget(self.status)
+        self.mic_btn = QPushButton("🎙")
+        self.mic_btn.setToolTip("Микрофон вкл/выкл")
         self.mic_btn.setCheckable(True)
         self.mic_btn.setChecked(bool(self.config_obj.get("mic_enabled", True)))
+        self.mic_btn.setFixedWidth(44)
         self.mic_btn.toggled.connect(self._toggle_mic)
-        h.addWidget(self.mic_btn)
-        root.addWidget(head)
+        head.addWidget(self.mic_btn)
+        aura_mode = QPushButton("◈ AURA MODE")
+        aura_mode.setObjectName("ghost")
+        aura_mode.setToolTip("Кинематографичный режим: только лицо")
+        aura_mode.clicked.connect(self._toggle_aura_mode)
+        head.addWidget(aura_mode)
+        root.addLayout(head)
 
-        # ------------------- тело -------------------
+        line = QFrame()
+        line.setObjectName("panelLine")
+        line.setFixedHeight(1)
+        root.addWidget(line)
+
+        # ------------------- тело: ЦЕНТР = ЛИЦО -------------------
         body = QHBoxLayout()
-        body.setSpacing(8)
+        body.setSpacing(20)
         root.addLayout(body, 1)
 
-        # ----- левая колонка: лицо -----
-        left = QFrame()
-        left.setObjectName("panel")
-        left.setFixedWidth(380)
-        lv = QVBoxLayout(left)
-        lv.setContentsMargins(14, 14, 14, 12)
+        # ----- центр: лицо + состояние + волна + кнопки -----
+        center = QVBoxLayout()
+        center.addStretch(1)
         if FaceImageWidget.images_available():
-            self.face = FaceImageWidget()      # портрет-аватар (SIGNALIS-стиль)
+            self.face = FaceImageWidget()
         else:
-            self.face = FaceWidget()           # рисованный HUD-вариант
-        self.face.setMinimumHeight(330)
-        lv.addWidget(self.face, 1)
-        self.state_label = QLabel("Запуск…")
+            self.face = FaceWidget()
+        self.face.setMinimumSize(430, 430)
+        center.addWidget(self.face, 0, Qt.AlignHCenter)
+
+        self.state_label = QLabel("READY")
+        self.state_label.setObjectName("bigstate")
         self.state_label.setAlignment(Qt.AlignCenter)
-        f = self.state_label.font()
-        f.setPointSize(13)
-        f.setBold(True)
-        self.state_label.setFont(f)
-        lv.addWidget(self.state_label)
-        self.mood_label = QLabel("😐 нейтрально")
-        self.mood_label.setObjectName("dim")
-        self.mood_label.setAlignment(Qt.AlignCenter)
-        lv.addWidget(self.mood_label)
-        self.energy = QProgressBar()
-        self.energy.setRange(0, 100)
-        self.energy.setValue(87)
-        self.energy.setFormat("энергия %p%")
-        self.energy.setFixedHeight(16)
-        lv.addWidget(self.energy)
+        center.addWidget(self.state_label)
         self.subtitle = QLabel("Готова, когда вы готовы.")
-        self.subtitle.setObjectName("dim")
+        self.subtitle.setObjectName("quote")
         self.subtitle.setAlignment(Qt.AlignCenter)
         self.subtitle.setWordWrap(True)
-        self.subtitle.setMinimumHeight(46)
-        lv.addWidget(self.subtitle)
+        self.subtitle.setMinimumHeight(40)
+        center.addWidget(self.subtitle)
 
-        btns = QHBoxLayout()
-        talk = QPushButton("🎤 Слушать")
-        talk.setObjectName("accent")
-        talk.clicked.connect(self._push_talk)
+        # большой круг-кнопка «говорить»
+        self.talk_btn = QPushButton("◉  ГОВОРИТЬ")
+        self.talk_btn.setObjectName("accent")
+        self.talk_btn.setFixedWidth(210)
+        self.talk_btn.setFixedHeight(40)
+        self.talk_btn.clicked.connect(self._push_talk)
+        center.addWidget(self.talk_btn, 0, Qt.AlignHCenter)
+
+        row = QHBoxLayout()
+        row.addStretch(1)
         vis = QPushButton("👁 VISION")
-        vis.setToolTip("Сделать скриншот и спросить ИИ, что на экране")
+        vis.setToolTip("Скриншот → что на экране?")
         vis.clicked.connect(self._vision)
-        undo = QPushButton("⏪ Отменить")
+        undo = QPushButton("⏪ ОТМЕНИТЬ")
         undo.clicked.connect(lambda: self.brain.undo_last_async())
-        teach = QPushButton("⏺ Учить")
-        teach.setToolTip("Teach Mode: записать ваши действия в команду")
+        teach = QPushButton("⏺ УЧИТЬ")
+        teach.setToolTip("Записать ваши действия в команду")
         teach.clicked.connect(self._teach)
-        for b in (talk, vis, undo, teach):
-            btns.addWidget(b)
-        lv.addLayout(btns)
+        prof = QPushButton("⚡ РЕЖИМ ▸")
+        prof.setToolTip("Запустить выбранный режим")
+        prof.clicked.connect(self._run_profile_combo)
+        for b in (vis, undo, teach, prof):
+            b.setObjectName("ghost")
+            row.addWidget(b)
+        row.addStretch(1)
+        center.addLayout(row)
 
-        prof_row = QHBoxLayout()
-        prof_row.addWidget(QLabel("Режим:"))
         self.profile_combo = QComboBox()
+        self.profile_combo.setObjectName("ghost")
         self._fill_profiles_combo()
-        prof_row.addWidget(self.profile_combo, 1)
-        run = QPushButton("▶")
-        run.setFixedWidth(40)
-        run.clicked.connect(self._run_profile_combo)
-        prof_row.addWidget(run)
-        lv.addLayout(prof_row)
+        self.profile_combo.setFixedWidth(170)
+        self.profile_combo.setStyleSheet("font-size: 8pt;")
+        center.addWidget(self.profile_combo, 0, Qt.AlignHCenter)
+        center.addStretch(1)
 
-        body.addWidget(left)
+        body.addLayout(center, 5)
 
-        # ----- правая колонка: вкладки -----
+        # ----- справа: консоль-поток + вкладки -----
+        right = QVBoxLayout()
         self.tabs = QTabWidget()
-        body.addWidget(self.tabs, 1)
+        right.addWidget(self.tabs, 1)
         self.tab_chat = QWidget()
         self.tab_cmds = QWidget()
         self.tab_profiles = QWidget()
         self.tab_perms = QWidget()
         self.tab_settings = QWidget()
-        for label, widget in (("💬 Диалог", self.tab_chat), ("⚡ Команды", self.tab_cmds),
-                              ("🎮 Режимы", self.tab_profiles),
-                              ("🛡 Разрешения", self.tab_perms),
-                              ("⚙ Настройки", self.tab_settings)):
+        for label, widget in (("КОНСОЛЬ", self.tab_chat),
+                              ("⚡ КОМАНДЫ", self.tab_cmds),
+                              ("◈ РЕЖИМЫ", self.tab_profiles),
+                              ("🛡 ДОСТУП", self.tab_perms),
+                              ("⚙ НАСТРОЙКИ", self.tab_settings)):
             self.tabs.addTab(widget, label)
         self._build_chat(self.tab_chat)
         self._build_commands(self.tab_cmds)
         self._build_profiles(self.tab_profiles)
         self._build_perms(self.tab_perms)
         self._build_settings(self.tab_settings)
+        body.addLayout(right, 4)
 
-        # ------------------- нижняя строка -------------------
-        bottom = QFrame()
-        bottom.setObjectName("panel")
-        b = QHBoxLayout(bottom)
-        b.setContentsMargins(12, 8, 12, 8)
+        # ------------------- нижняя статус-панель -------------------
+        line2 = QFrame()
+        line2.setObjectName("panelLine")
+        line2.setFixedHeight(1)
+        root.addWidget(line2)
+        bottom = QHBoxLayout()
+        bottom.setContentsMargins(4, 6, 4, 0)
+        self.stats = StatLabel()
+        bottom.addWidget(self.stats)
+        self.mood_label = QLabel("😐 нейтрально · энергия 87%")
+        self.mood_label.setObjectName("dim")
+        bottom.addWidget(self.mood_label)
+        bottom.addStretch(1)
+        self.energy = QProgressBar()
+        self.energy.setRange(0, 100)
+        self.energy.setValue(87)
+        self.energy.setTextVisible(False)
+        self.energy.setFixedWidth(120)
+        self.energy.setFixedHeight(4)
+        bottom.addWidget(self.energy)
+        self.energy_lbl = QLabel("ENERGY 87%")
+        self.energy_lbl.setObjectName("dim")
+        bottom.addWidget(self.energy_lbl)
+        root.addLayout(bottom)
+
+        # ------------------- строка ввода -------------------
         self.input = QLineEdit()
-        self.input.setPlaceholderText(
-            "Скажите или напишите: «аврора, включи рабочий режим»…")
+        self.input.setPlaceholderText("Скажите или напишите: «аврора, включи рабочий режим»…")
         self.input.returnPressed.connect(self._submit)
-        b.addWidget(self.input, 1)
-        send = QPushButton("Отправить")
-        send.setObjectName("accent")
-        send.clicked.connect(self._submit)
-        b.addWidget(send)
-        root.addWidget(bottom)
+        root.addWidget(self.input)
 
-        self._refresh_perm_badge()
+        self._auramode = False
+
+    # ------------------------------------------------------------------
+    def _toggle_aura_mode(self):
+        """AURA MODE: интерфейс исчезает, остаётся только лицо."""
+        self._auramode = not self._auramode
+        self.tabs.setVisible(not self._auramode)
+        self.input.setVisible(not self._auramode)
+        self.energy.setVisible(not self._auramode)
+        self.energy_lbl.setVisible(not self._auramode)
+        self.perm_badge.setVisible(not self._auramode)
+        for w in (self.talk_btn, self.profile_combo):
+            w.setVisible(not self._auramode)
+        self.face.setMinimumSize(560, 560) if self._auramode else \
+            self.face.setMinimumSize(430, 430)
+        if self._auramode:
+            self.state_label.setText("AURA")
+            self.subtitle.setText("Я слушаю.")
+            self._chat_line("system", "◈ AURA MODE: интерфейс скрыт.")
+        else:
+            self.subtitle.setText("Готова, когда вы готовы.")
 
     # ==================================================================
     # вкладки
     # ==================================================================
     def _build_chat(self, tab):
-        split = QHBoxLayout(tab)
-        split.setContentsMargins(0, 0, 0, 0)
+        lay = QVBoxLayout(tab)
+        lay.setContentsMargins(0, 4, 0, 0)
+        cap = QLabel("КОНСОЛЬ · поток команд и событий")
+        cap.setObjectName("dim")
+        lay.addWidget(cap)
         self.chat = QTextBrowser()
         self.chat.setOpenExternalLinks(True)
-        split.addWidget(self.chat, 3)
-        right = QVBoxLayout()
-        cap = QLabel("Активность")
-        cap.setObjectName("dim")
-        right.addWidget(cap)
-        self.activity_tree = QTreeWidget()
-        self.activity_tree.setHeaderLabels(["Время", "Действие"])
-        self.activity_tree.header().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.activity_tree.setRootIsDecorated(False)
-        self.activity_tree.setMaximumWidth(280)
-        right.addWidget(self.activity_tree, 1)
-        undo = QPushButton("⏪ Отменить последнее")
-        undo.clicked.connect(lambda: self.brain.undo_last_async())
-        right.addWidget(undo)
-        split.addLayout(right)
+        lay.addWidget(self.chat, 1)
         self._chat_line("system", "AURA запущена. Готова к работе.")
 
     def _chat_line(self, level, msg):
+        import datetime as _dt
         colors = {"user": ACCENT, "aura": "#a5b4fc", "system": FG_DIM, "error": ERR}
-        icons = {"user": "🗣", "aura": "💠", "system": "•", "error": "✖"}
-        safe = (msg or "").replace("&", "&amp;").replace("<", "&lt;")
+        prefix = {"user": "USER", "aura": "AURA", "system": "SYS", "error": "ERR"}
+        icons = {"user": "🎙", "aura": "💠", "system": "⚙", "error": "⚠",
+                 "activity": "✓", "voice": "🎙", "ai": "🧠", "file": "📁",
+                 "browser": "🌐"}
+        safe = (msg or "").replace("&", "&amp;").replace("<", "&lt;").replace("\n", "<br>")
+        stamp = _dt.datetime.now().strftime("%H:%M:%S")
+        icon = icons.get(level, "•")
+        who = prefix.get(level, "SYS")
         self.chat.append(
-            f"<span style='color:{FG_DIM};font-size:8pt'>"
-            f"{icons.get(level, '•')} </span>"
-            f"<span style='color:{colors.get(level, FG_DIM)}'>{safe}</span>")
+            f"<span style='color:{FG_DIM};font-size:7pt'>{stamp}</span> "
+            f"<span style='color:{colors.get(level, FG_DIM)};font-size:8pt'>{icon} {who}</span><br>"
+            f"&nbsp;&nbsp;&nbsp;<span style='color:{colors.get(level, FG_DIM)}'>{safe}</span>")
 
     def _build_commands(self, tab):
         lay = QGridLayout(tab)
@@ -1135,18 +1176,18 @@ class MainWindow(QMainWindow):
                 self._set_status("Слушаю…", "listening")
         elif kind == "activity":
             icon = evt.get("icon", "•")
-            item = QTreeWidgetItem([evt.get("time", ""), f"{icon} {evt.get('desc', '')}",
-                                    "↶" if evt.get("has_undo") else ""])
-            self.activity_tree.insertTopLevelItem(0, item)
+            self._chat_line("activity", f"{icon} {evt.get('desc', '')}")
         elif kind == "mood":
             mood = evt.get("mood", "neutral")
             emoji = MOOD_EMOJI.get(mood, "😐")
             names = {"neutral": "нейтрально", "happy": "довольна",
-                     "curious": "любопытно", "sleepy": "сонно",
+                     "curious": "любопытно", "sleepy": "дремлет",
                      "annoyed": "раздражено", "confident": "уверенно",
                      "concerned": "обеспокоена"}
-            self.mood_label.setText(f"{emoji} {names.get(mood, mood)}")
-            self.energy.setValue(int(evt.get("energy", 87)))
+            energy = int(evt.get("energy", 87))
+            self.mood_label.setText(f"{emoji} {names.get(mood, mood)} · энергия {energy}%")
+            self.energy.setValue(energy)
+            self.energy_lbl.setText(f"ENERGY {energy}%")
             self.face.set_mood(mood, evt.get("energy", 87))
             if mood == "sleepy":
                 self.face.set_state("sleep")
@@ -1154,10 +1195,15 @@ class MainWindow(QMainWindow):
                 self.face.set_state("listening" if self.mic_active else "idle")
 
     def _set_status(self, text, state="idle"):
-        self.state_label.setText(text)
+        big = {"listening": "LISTENING", "thinking": "PROCESSING",
+               "speaking": "SPEAKING", "success": "DONE ✓", "error": "ERROR",
+               "sleep": "SLEEPING", "idle": "READY", "alert": "ATTENTION",
+               "off": "OFFLINE"}
+        self.state_label.setText(big.get(state, text.upper()))
         self.state_label.setStyleSheet(f"color: {STATE_COLORS_UI.get(state, FG_DIM)};")
         self.dot.setStyleSheet(f"color: {STATE_COLORS_UI.get(state, FG_DIM)};")
-        self.status.setText(text)
+        self.status.setText("SYSTEM ONLINE" if state not in ("error", "off")
+                            else "SYSTEM " + big.get(state, "…"))
 
     # ==================================================================
     def closeEvent(self, evt):

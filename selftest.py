@@ -293,8 +293,11 @@ def check_gui():
                     app.processEvents()
             win.face.set_state("idle")
             ok = (win.tabs.count() == 5 and win.cmd_list is not None
-                  and win.perm_combos)
-            report("Окно Command Center строится (5 вкладок)", ok)
+                  and win.perm_combos and win.talk_btn is not None)
+            # AURA MODE переключается туда-обратно без падений
+            win._toggle_aura_mode()
+            win._toggle_aura_mode()
+            report("Окно Command Center строится (5 вкладок, AURA MODE)", ok)
             # сохраняем скриншот для документации
             shots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                      "docs")
