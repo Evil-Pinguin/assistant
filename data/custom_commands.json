@@ -1,0 +1,38 @@
+{
+  "commands": [
+    {
+      "name": "Рабочая папка",
+      "phrases": ["открой рабочую папку", "рабочая папка", "мои документы"],
+      "actions": [
+        {"type": "open_app", "target": "~"},
+        {"type": "say", "text": "Открываю рабочую папку"}
+      ]
+    },
+    {
+      "name": "Режим работы",
+      "phrases": ["режим работы", "начнём работу", "пора работать"],
+      "actions": [
+        {"type": "open_url", "target": "https://mail.google.com"},
+        {"type": "open_app", "target": "notepad"},
+        {"type": "say", "text": "Рабочий режим активирован. Удачной работы!"}
+      ]
+    },
+    {
+      "name": "Свернуть всё",
+      "phrases": ["домой", "на рабочий стол"],
+      "actions": [
+        {"type": "press", "target": "win+d"},
+        {"type": "say", "text": "Свернула всё, вотферс на месте"}
+      ]
+    },
+    {
+      "name": "Скриншот и показать",
+      "pattern": "снимок монитора",
+      "actions": [
+        {"type": "shell", "target": "echo скриншот"},
+        {"type": "press", "target": "win+printscreen"},
+        {"type": "say", "text": "Снимок сделан и сохранён"}
+      ]
+    }
+  ]
+}

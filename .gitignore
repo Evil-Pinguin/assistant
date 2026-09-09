@@ -1,0 +1,8 @@
+# настройки содержат API-ключи
+data/settings.json
+data/settings.json.tmp
+data/jarvis.log
+__pycache__/
+*.pyc
+.venv/
+venv/
