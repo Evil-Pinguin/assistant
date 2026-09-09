@@ -1,0 +1,32 @@
+{
+  "commands": [
+    {
+      "name": "Рабочая папка",
+      "phrases": ["открой рабочую папку", "рабочая папка", "мои документы"],
+      "actions": [
+        {"type": "open_app", "target": "~"},
+        {"type": "say", "text": "Открываю рабочую папку"}
+      ]
+    },
+    {
+      "name": "Вебинар",
+      "phrases": ["начинаем вебинар", "вебинар режим"],
+      "actions": [
+        {"type": "open_url", "target": "https://meet.google.com"},
+        {"type": "press", "target": "win+d"},
+        {"type": "volume", "target": "70"},
+        {"type": "say", "text": "Всё готово для вебинара"}
+      ]
+    },
+    {
+      "name": "Перерыв",
+      "phrases": ["перерыв", "сделаем паузу", " coffee break"],
+      "actions": [
+        {"type": "open_url", "target": "https://youtube.com/results?search_query=lofi"},
+        {"type": "volume", "target": "40"},
+        {"type": "wait", "target": "2"},
+        {"type": "say", "text": "Перерыв на пятнадцать минут. Кофе обязательн"}
+      ]
+    }
+  ]
+}

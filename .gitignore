@@ -1,0 +1,13 @@
+# настройки содержат API-ключи
+data/settings.json
+data/settings.json.tmp
+data/jarvis.log
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# скриншоты тестового прогона
+*.png
+!docs/**/*.png
+data/journal.json
