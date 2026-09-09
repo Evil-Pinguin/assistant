@@ -20,6 +20,9 @@ try:
 except ImportError:
     requests = None
 
+# обработчик говорит «это не моя команда» — пробуем следующие
+NO_MATCH = "__NO_MATCH__"
+
 
 class SkillContext:
     def __init__(self, say, log, config, action_ctx, ear=None, voice=None,
@@ -553,6 +556,65 @@ def h_brightness(t, m, ctx):
         return str(exc)
 
 
+# --- заметки и быстрые запуски --------------------------------------------
+def h_notes(t, m, ctx):
+    """Открыть программу заметок (Настройки → Продвинутые → «путь заметок»)."""
+    target = (ctx.config.get("notes_app") or "").strip()
+    if not target:
+        return "Путь к программе заметок не задан (Настройки → Продвинутые)."
+    from .actions import open_app, open_url
+    errors = []
+    opened = 0
+    for part in [x.strip() for x in target.split("+") if x.strip()]:
+        try:
+            (open_url if part.startswith("http") else open_app)(part, ctx.action_ctx)
+            opened += 1
+        except Exception as exc:
+            errors.append(f"{part}: {exc}")
+    if not opened:
+        ctx.log("Заметки: " + "; ".join(errors), level="error")
+        return ("Не нашла программу заметок по пути из настроек. "
+                "Проверьте его: Настройки → Продвинутые → «путь заметок».")
+    return "Открываю заметки"
+
+
+def h_quick_launch(t, m, ctx):
+    """Запуск по имени: «запусти dev», «открой криту», «включи юнити»."""
+    name = (m.group("name") or "").strip().lower()
+    if not name:
+        return None
+    table = ctx.config.get("quick_launch") or {}
+    aliases = {
+        "dev": "dev", "дев": "dev", "код": "dev", "вс код": "dev", "vs code": "dev",
+        "визуал": "dev", "визуал студио": "dev", "визуал студию": "dev",
+        "студию": "dev", "разработка": "dev", "гитхаб": "dev", "github": "dev",
+        "krita": "krita", "крита": "krita", "криту": "krita", "криты": "krita",
+        "unity": "unity", "unity hub": "unity", "юнити": "unity",
+        "юнити хаб": "unity", "юнитихаб": "unity",
+        "blender": "blender", "блендер": "blender", "блендера": "blender",
+    }
+    key = aliases.get(name, name)
+    if key not in table:
+        return NO_MATCH
+    from .actions import open_app, open_url
+    spec = table[key]
+    opened = 0
+    for part in [x.strip() for x in spec.split("+") if x.strip()]:
+        try:
+            if part.startswith("http"):
+                open_url(part, ctx.action_ctx)
+            else:
+                open_app(part, ctx.action_ctx)
+            opened += 1
+        except Exception as exc:
+            ctx.log(f"Быстрый запуск «{part}»: {exc}", level="error")
+    if not opened:
+        return f"Не смогла открыть «{name}»."
+    label = {"dev": "VS Code и GitHub", "krita": "Krita", "unity": "Unity Hub",
+             "blender": "Blender"}.get(key, name)
+    return f"Запускаю {label}"
+
+
 # --- фаза 2: «открой …» ---------------------------------------------------
 def h_open_generic(t, m, ctx):
     what = (m.group("what") or "").strip()
@@ -667,6 +729,13 @@ def get_skills():
 
         # --- приложения ---
         Skill("close_app", [r"^(?:закрой|закрыть)\s+(?P<q>.+)$"], h_close_app),
+
+        # --- заметки и быстрые запуски ---
+        Skill("notes", [r"(ту ду лист|туду лист|to-do list|to do list|список дел|"
+                        r"(?:открой|покажи|запусти)?\s*(?:мои |мою )?(заметки|записи|"
+                        r"блокнот задач)|открой to-do)"], h_notes),
+        Skill("quick_launch", [r"^(?:запусти|открой|включи)\s+(?P<name>[а-яё\w ]+?)\s*$"],
+              h_quick_launch),
 
         # --- развлечения ---
         Skill("joke", [r"(анекдот|шутк\w+|рассмеши|пошути)"], h_joke),

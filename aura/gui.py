@@ -896,6 +896,26 @@ class MainWindow(QMainWindow):
         mic_hint = QLabel("Микрофон включается кнопкой 🎙 в шапке окна.")
         mic_hint.setObjectName("dim")
         g3.addRow(mic_hint)
+        hk_hint = QLabel("Быстрые запуски (Ctrl+1…4): имя из «быстрых запусков» ниже.")
+        hk_hint.setObjectName("dim")
+        g3.addRow(hk_hint)
+        self.hotkey_edits = {}
+        qk = list((c.get("quick_launch") or {}).keys())
+        for combo in ("ctrl+1", "ctrl+2", "ctrl+3", "ctrl+4"):
+            e = QLineEdit(str((c.get("hotkeys") or {}).get(combo, "")))
+            e.setFixedWidth(140)
+            box = QHBoxLayout()
+            box.addWidget(QLabel(combo + " →"))
+            combo_names = QComboBox()
+            combo_names.addItems(qk)
+            if e.text() in qk:
+                combo_names.setCurrentText(e.text())
+            combo_names.currentTextChanged.connect(e.setText)
+            box.addWidget(combo_names)
+            row = QWidget()
+            row.setLayout(box)
+            g3.addRow(row)
+            self.hotkey_edits[combo] = e
 
         # --- Нейросеть ---
         g4 = group("🤖 Нейросеть")
@@ -929,6 +949,10 @@ class MainWindow(QMainWindow):
         add_str(g6, "Ссылка «включи музыку»", "music_url", width=340)
         add_str(g6, "Папка для скриншотов", "screenshots_dir", width=340)
         add_bool(g6, "Подтверждать выключение ПК", "confirm_power")
+        add_bool(g6, "Горячие клавиши Ctrl+1…4 включены", "hotkeys_enabled")
+        add_str(g6, "Путь к программе заметок (ту ду лист)", "notes_app", width=340)
+        for qk_key in ("dev", "krita", "unity", "blender"):
+            add_str(g6, f"Быстрый запуск «{qk_key}»", "quick_launch/" + qk_key, width=340)
         self.projects_folder_edit = QLineEdit(
             str(self.brain.memory.get_pref("projects_folder", "")))
         self.projects_folder_edit.setFixedWidth(340)
@@ -1035,7 +1059,19 @@ class MainWindow(QMainWindow):
                 val = w.value()
                 c.set(key, val if key != "tts_volume" else val / 100.0)
             elif isinstance(w, QLineEdit):
-                c.set(key, w.text().strip())
+                if "/" in key:
+                    sect, sub = key.split("/", 1)
+                    merged = dict(c.get(sect) or {})
+                    merged[sub] = w.text().strip()
+                    c.set(sect, merged)
+                else:
+                    c.set(key, w.text().strip())
+        hk = {}
+        for combo, e in getattr(self, "hotkey_edits", {}).items():
+            if e.text().strip():
+                hk[combo] = e.text().strip()
+        if hk:
+            c.set("hotkeys", hk)
         idx = self.voice_combo.currentIndex()
         c.set("tts_voice_id", self.voice_ids[idx] if idx >= 0 else "")
         if getattr(self, "projects_folder_edit", None) is not None:
@@ -1049,7 +1085,11 @@ class MainWindow(QMainWindow):
                                    if x.strip()]
         self.brain.memory.save()
         self.config_obj.save()
-        self._chat_line("system", "Настройки сохранены ✓")
+        if self.hotkeys is not None and self.hotkeys.available:
+            self.hotkeys.restart()
+            self._chat_line("system", "Настройки сохранены ✓ Горячие клавиши обновлены.")
+        else:
+            self._chat_line("system", "Настройки сохранены ✓")
 
     # ==================================================================
     # события фоновых потоков

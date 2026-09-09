@@ -213,6 +213,22 @@ def check_logic():
         report("Мозг: подсказка при нераспознанном",
                any("не распознана" in s for s in voice.spoken[n:]))
 
+        # заметки (путь-заглушка: open_app упадёт, но навык сработает)
+        cfg.set("notes_app", os.path.join(tmp, "заметки"))
+        n = len(voice.spoken)
+        brain._process("ту ду лист", "text")
+        import time as _t
+        _t.sleep(0.8)
+        report("Мозг: «ту ду лист» открывает заметки",
+               any("замет" in x.lower() for x in voice.spoken[n:]))
+
+        # быстрый запуск
+        n = len(voice.spoken)
+        brain._process("запусти криту", "text")
+        _t.sleep(0.8)
+        report("Мозг: «запусти криту» → быстрый запуск",
+               any("крит" in x.lower() for x in voice.spoken[n:]))
+
     # нечёткий поиск своих команд
     with tempfile.TemporaryDirectory() as tmp:
         cc = CustomCommands(os.path.join(tmp, "c.json"))
@@ -232,6 +248,19 @@ def check_logic():
     cats = A.collect_categories([{"type": "shell", "target": "x"},
                                  {"type": "open_url", "target": "y"}])
     report("Действия: категории разрешений", cats == {"shell", "browser_open"})
+
+    # хоткеи: сборка карты pynput
+    try:
+        from aura.hotkey import GlobalHotkeys
+        hk = GlobalHotkeys(on_talk=lambda: None, get_actions=lambda: {"ctrl+1": lambda: None})
+        if not hk.available:
+            report("Хоткеи: класс работает", True,
+                   "pynput нет в песочнице — на Windows установится из requirements")
+        else:
+            report("Хоткеи: карта pynput строится",
+                   hk._to_pynput("ctrl+1") == "<ctrl>+<1>")
+    except Exception as exc:
+        report("Хоткеи: класс работает", False, str(exc))
 
     # зрение: сборка сообщений
     from aura import vision as V

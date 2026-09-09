@@ -96,6 +96,7 @@ class Brain:
         self.emit("state", name="thinking", label="Думаю…")
 
         # 1) встроенные навыки
+        from .skills.builtins import NO_MATCH
         for skill in self.skills:
             if skill.phase != 1:
                 continue
@@ -103,6 +104,8 @@ class Brain:
                 m = pat.search(norm)
                 if m:
                     reply = self._run_skill(skill, norm, m)
+                    if reply == NO_MATCH:
+                        continue
                     self._finish(reply, frustrated)
                     return
 
@@ -126,6 +129,8 @@ class Brain:
                 m = pat.search(norm)
                 if m:
                     reply = self._run_skill(skill, norm, m)
+                    if reply == NO_MATCH:
+                        continue
                     self._finish(reply, frustrated)
                     return
 

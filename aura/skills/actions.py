@@ -73,17 +73,22 @@ def open_app(target, ctx):
     if not target:
         return "Пустой запуск", None
     desc = f"Запуск: {os.path.basename(target) or target}"
-    proc = None
     try:
         if os.name == "nt":
-            os.startfile(target)  # noqa
+            try:
+                os.startfile(target)  # noqa: App Paths, exe, файлы, папки
+            except OSError:
+                # имя приложения (krita, unityhub...) — ищем через shell
+                subprocess.Popen(["start", "", target], shell=True,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 creationflags=CREATE_NO_WINDOW)
             return desc, None
         if os.path.isfile(target) and os.access(target, os.X_OK):
-            proc = subprocess.Popen([target], stdout=subprocess.DEVNULL,
-                                    stderr=subprocess.DEVNULL)
+            subprocess.Popen([target], stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
         elif shutil.which(target):
-            proc = subprocess.Popen(shlex_split(target), stdout=subprocess.DEVNULL,
-                                    stderr=subprocess.DEVNULL)
+            subprocess.Popen(shlex_split(target), stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
         else:
             subprocess.Popen(["xdg-open", target], stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL)

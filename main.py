@@ -77,6 +77,30 @@ def run_console(config):
         voice.shutdown()
 
 
+def make_hotkey_actions(config, brain, log):
+    """Действия для Ctrl+1..4: запуски из настроек (quick_launch)."""
+    from aura.skills.actions import ActionContext, open_app, open_url
+
+    def run_spec(spec):
+        ctx = ActionContext(say=brain.say, log=brain._log, config=config,
+                            permissions=brain.permissions,
+                            activity=brain.activity)
+        for part in [x.strip() for x in spec.split("+") if x.strip()]:
+            try:
+                (open_url if part.startswith("http") else open_app)(part, ctx)
+            except Exception as exc:
+                brain._log(f"Быстрый запуск: {exc}", level="error")
+
+    actions = {}
+    for combo, key in (config.get("hotkeys") or {}).items():
+        spec = (config.get("quick_launch") or {}).get(key)
+        if spec:
+            actions[combo] = lambda sp=spec, k=key: (
+                brain.activity.add(f"Горячая клавиша: {k}", icon="⌨"),
+                run_spec(sp))
+    return actions
+
+
 def run_gui(config, log):
     from PySide6.QtWidgets import QApplication
     from aura.gui import MainWindow
@@ -88,11 +112,15 @@ def run_gui(config, log):
     events = queue.Queue()
     emit, voice, ear, brain = build_core(config, events)
 
-    hotkeys = GlobalHotkeys(on_talk=lambda: ear.listen_once())
-    if config.get("hotkey_enabled", True) and hotkeys.available:
+    hotkeys = GlobalHotkeys(
+        on_talk=lambda: ear.listen_once(),
+        get_actions=lambda: make_hotkey_actions(config, brain, log)
+        if config.get("hotkeys_enabled", True) else {})
+    if hotkeys.available:
         if hotkeys.start():
-            log.info("Глобальная клавиша Ctrl+Space активна")
-    elif not hotkeys.available:
+            combos = ", ".join((config.get("hotkeys") or {}).keys())
+            log.info(f"Горячие клавиши активны: Ctrl+Space{', ' + combos if combos else ''}")
+    else:
         log.info("pynput не установлен — глобальные клавиши отключены "
                  "(pip install pynput)")
 

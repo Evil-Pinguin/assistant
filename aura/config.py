@@ -49,6 +49,23 @@ DEFAULTS = {
     # --- разрешения ( уровни: safe / normal / god ) ---
     "permission_level": "normal",
     "perm_overrides": {},            # {"shell": "deny", ...}
+    # --- горячие клавиши запуска (Ctrl+цифра) ---
+    "hotkeys_enabled": True,
+    "hotkeys": {
+        "ctrl+1": "dev",
+        "ctrl+2": "krita",
+        "ctrl+3": "unity",
+        "ctrl+4": "blender",
+    },
+    # --- быстрые запуски: имя -> что открывать ---
+    "quick_launch": {
+        "dev": "code + https://github.com",
+        "krita": "krita",
+        "unity": "unityhub",
+        "blender": "blender",
+    },
+    # --- программа заметок: что открывать на «ту ду лист»/«заметки» ---
+    "notes_app": "C:/todo/to-do",
 }
 
 
