@@ -26,6 +26,7 @@ from .memory import Memory
 from .permissions import Permissions
 from .activity import Activity
 from .profiles import Profiles
+from .state import StateMachine
 from . import vision as V
 from .skills import actions as A
 from .skills.builtins import SkillContext, get_skills
@@ -63,6 +64,7 @@ class Brain:
         self._pending_confirm = None   # (prompt, fn, expires)
         self._confirm_lock = threading.Lock()
         self._last_reply_time = 0
+        self.state = StateMachine(emit)
 
     # ------------------------------------------------------------------
     def say(self, text):
@@ -93,7 +95,7 @@ class Brain:
                 return
 
         frustrated = self.mood.observe_user(text)
-        self.emit("state", name="thinking", label="Думаю…")
+        self.state.set("processing")
 
         # 1) встроенные навыки
         from .skills.builtins import NO_MATCH
@@ -139,7 +141,7 @@ class Brain:
             self._ask_ai(text, frustrated=frustrated)
             return
 
-        self.emit("state", name="idle", label="Ожидаю…")
+        self.state.set("idle")
         self.say("Команда не распознана. Подключите ИИ в настройках или добавьте "
                  "свою команду во вкладке «Команды».")
 
@@ -150,7 +152,7 @@ class Brain:
             reply = skill.handler(norm, m, ctx)
         except Exception as exc:
             self._log(f"Ошибка навыка «{skill.name}»: {exc}", level="error")
-            self.emit("state", name="error", label="Ошибка")
+            self.state.set("error")
             self.mood.on_error()
             if "пакет" in str(exc):
                 return f"Не получилось: {exc}"
@@ -163,7 +165,7 @@ class Brain:
             self._set_pending(prompt, fn)
             return None  # подтверждение спросим отдельно
         self.mood.on_success()
-        self.emit("state", name="success", label="Готово")
+        self.state.set("success")
         return reply
 
     def _make_ctx(self):
@@ -182,7 +184,7 @@ class Brain:
             self._log(f"Действие «{d}» отклонено разрешениями "
                       f"({self.permissions.level.upper()}).", level="error")
         if not actions:
-            self.emit("state", name="error", label="Запрещено")
+            self.state.set("error")
             return "Эти действия запрещены текущим уровнем разрешений."
 
         needed = A.check_confirm_needed(actions, self.permissions)
@@ -199,11 +201,20 @@ class Brain:
         action_ctx = A.ActionContext(
             say=self.say, log=self._log, config=self.config,
             permissions=self.permissions, activity=self.activity)
-        self.activity.add(f"Режим/команда: {label}", kind="workflow", icon="⚡")
-        ok = A.execute_actions(actions, action_ctx)
-        self.mood.on_success(count=len(actions))
-        self.emit("state", name="success", label=f"Выполнила: {label}")
-        return f"Выполнила «{label}»" if ok else ""
+        self.activity.add(f"Задача: {label}", kind="workflow", icon="⚡")
+        self.state.set("executing")
+        ok, failed = A.execute_actions(actions, action_ctx)
+        if ok and not failed:
+            self.state.set("verifying")
+            self.mood.on_success(count=ok)
+            self.state.set("success")
+            return f"Готово: {label}."
+        if ok:
+            self.state.set("success")
+            return f"«{label}»: выполнено {ok}, не удалось {failed}."
+        self.state.set("error")
+        self.mood.on_error()
+        return f"Не удалось выполнить «{label}»."
 
     def _run_profile(self, prof):
         self._log(f"Режим: {prof.get('icon', '')} {prof.get('name')}")
@@ -242,12 +253,12 @@ class Brain:
         else:
             messages.append({"role": "user", "content": text})
         self._log("Запрос к ИИ…")
-        self.emit("state", name="thinking", label="Думаю…")
+        self.state.set("processing")
         try:
             reply = self.ai.chat(messages, vision=image_bytes is not None)
         except Exception as exc:
             self._log(f"Ошибка ИИ: {exc}", level="error")
-            self.emit("state", name="error", label="ИИ недоступен")
+            self.state.set("error")
             self.mood.on_error()
             self.say("Не удалось связаться с нейросетью. Проверьте настройки ИИ.")
             return
@@ -257,10 +268,10 @@ class Brain:
             self.history.append({"role": "assistant", "content": clean})
         if ai_actions and allow:
             self._run_workflow(ai_actions, label="задание ИИ")
-            self.emit("state", name="idle", label="Ожидаю…")
+            self.state.set("idle")
             self.say(clean)
             return
-        self.emit("state", name="idle", label="Ожидаю…")
+        self.state.set("idle")
         self.say(clean)
 
     # ------------------------------------------------------------------
@@ -301,10 +312,10 @@ class Brain:
     def _undo_sync(self):
         desc = self.activity.undo_last()
         if desc:
-            self.emit("state", name="success", label="Отменено")
+            self.state.set("success")
             self.say(f"Отменила: {desc}")
         else:
-            self.emit("state", name="idle", label="Нечего отменять")
+            self.state.set("idle")
             self.say("Не нашла действий, которые можно отменить.")
 
     # ------------------------------------------------------------------
@@ -314,7 +325,7 @@ class Brain:
         self._pending_confirm = (prompt, fn,
                                  datetime.datetime.now().timestamp() + 60)
         self.say(prompt + " Скажите «да» или «нет».")
-        self.emit("state", name="listening", label="Жду подтверждения…")
+        self.state.set("listening", "Жду подтверждения…")
         self.activity.add(f"Жду подтверждения: {prompt}", kind="confirm", icon="❓")
 
     def _handle_confirmation(self, norm) -> bool:
@@ -327,13 +338,13 @@ class Brain:
             return True
         if re.match(r"^(да|подтвержда\w*|давай|ага|ну да|yes|окей|ок|конечно)\W*$", norm):
             self._pending_confirm = None
-            self.emit("state", name="thinking", label="Выполняю…")
+            self.state.set("executing")
             self.say(self.personality_ack() or "Выполняю.")
             threading.Thread(target=self._safe_call, args=(fn,), daemon=True).start()
             return True
         if re.match(r"^(нет|не|отмена|отмен\w*|стоп|не надо|no)\W*$", norm):
             self._pending_confirm = None
-            self.emit("state", name="idle", label="Отменено")
+            self.state.set("idle")
             self.say("Отмена.")
             return True
         return False
@@ -357,7 +368,7 @@ class Brain:
             ack = self.personality_ack()
             if ack:
                 prefix = ack + " "
-        self.emit("state", name="idle", label="Ожидаю…")
+        self.state.set("idle")
         self.say(prefix + reply)
 
     def shutdown(self):

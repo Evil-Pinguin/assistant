@@ -11,6 +11,7 @@
 """
 import os
 import shutil
+import time
 import subprocess
 import time
 import webbrowser
@@ -68,11 +69,38 @@ def open_url(target, ctx):
     return f"Открыт сайт {target}", None
 
 
+def _process_snapshot():
+    names = set()
+    try:
+        import psutil
+        for p in psutil.process_iter(["name"]):
+            names.add((p.info.get("name") or "").lower())
+    except Exception:
+        pass
+    return names
+
+
+def _verify_launched(token, before, timeout=4.0) -> bool:
+    """Проверить, что процесс с token в имени появился после запуска."""
+    token = (token or "").lower().strip()
+    if not token:
+        return False
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        for name in _process_snapshot():
+            if token in name:
+                return True
+        time.sleep(0.4)
+    return False
+
+
 def open_app(target, ctx):
     target = _expand(target)
     if not target:
         return "Пустой запуск", None
-    desc = f"Запуск: {os.path.basename(target) or target}"
+    base = os.path.basename(target) or target
+    desc = f"Запуск: {base}"
+    before = _process_snapshot()
     try:
         if os.name == "nt":
             try:
@@ -82,8 +110,7 @@ def open_app(target, ctx):
                 subprocess.Popen(["start", "", target], shell=True,
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                  creationflags=CREATE_NO_WINDOW)
-            return desc, None
-        if os.path.isfile(target) and os.access(target, os.X_OK):
+        elif os.path.isfile(target) and os.access(target, os.X_OK):
             subprocess.Popen([target], stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL)
         elif shutil.which(target):
@@ -92,7 +119,13 @@ def open_app(target, ctx):
         else:
             subprocess.Popen(["xdg-open", target], stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL)
-        return desc, None
+        # честная проверка: процесс реально появился?
+        token = base.lower()
+        if token.endswith(".exe"):
+            token = token[:-4]
+        if _verify_launched(token, before, timeout=2.0 if base.startswith("http") else 5.0):
+            return desc + " ✓", None
+        return desc + " (не удалось подтвердить)", None
     except Exception as exc:
         raise RuntimeError(f"не удалось открыть «{target}»: {exc}")
 
@@ -517,9 +550,14 @@ def strip_denied(actions, permissions):
     return keep, dropped
 
 
-def execute_actions(actions, ctx: ActionContext) -> int:
-    ok = 0
+def execute_actions(actions, ctx: ActionContext):
+    """Выполнить цепочку. Возвращает (успешно, с_ошибками)."""
+    ok = failed = 0
     for action in actions or []:
-        if execute_action(action, ctx):
+        res = execute_action(action, ctx)
+        flag = res[0] if isinstance(res, tuple) else res
+        if flag:
             ok += 1
-    return ok
+        else:
+            failed += 1
+    return ok, failed

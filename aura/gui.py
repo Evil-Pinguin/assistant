@@ -306,6 +306,43 @@ class WorkflowEditor(QWidget):
         self.listw.setCurrentRow(row + delta)
 
 
+class MicVU(QWidget):
+    """VU-метр микрофона: ▁▂▃▅▇▆▅▃▂▁ под лицом."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(26)
+        self._levels = [0.0] * 18
+        self._decay = [0.0] * 18
+
+    def set_levels(self, levels):
+        lv = list(levels)[:len(self._levels)]
+        while len(lv) < len(self._levels):
+            lv.append(0.0)
+        self._levels = lv
+        self.update()
+
+    def paintEvent(self, _evt):
+        from PySide6.QtGui import QPainter, QColor
+        from PySide6.QtCore import QRectF
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        p.fillRect(0, 0, self.width(), self.height(), QColor(0, 0, 0, 0))
+        n = len(self._levels)
+        span = min(self.width() * 0.6, 260)
+        x0 = (self.width() - span) / 2
+        bw = span / n
+        for i, lv in enumerate(self._levels):
+            target = max(0.06, min(1.0, lv))
+            self._decay[i] += (target - self._decay[i]) * 0.6
+            hgt = self._decay[i] * (self.height() - 6)
+            color = QColor(34, 211, 238, 160) if self._decay[i] < 0.75 else QColor(74, 222, 128, 200)
+            p.setPen(Qt.NoPen)
+            p.setBrush(color)
+            x = x0 + i * bw
+            p.drawRoundedRect(QRectF(x + 1, (self.height() - hgt) / 2, bw - 3, max(3, hgt)), 2, 2)
+
+
 # ==========================================================================
 # Главное окно
 # ==========================================================================
@@ -418,6 +455,17 @@ class MainWindow(QMainWindow):
         self.talk_btn.setFixedHeight(40)
         self.talk_btn.clicked.connect(self._push_talk)
         center.addWidget(self.talk_btn, 0, Qt.AlignHCenter)
+
+        self.vu = MicVU()
+        self.vu.setFixedWidth(300)
+        center.addWidget(self.vu, 0, Qt.AlignHCenter)
+
+        # компактная панель недавних действий
+        self.recent = QLabel("")
+        self.recent.setObjectName("dim")
+        self.recent.setAlignment(Qt.AlignCenter)
+        self.recent.setWordWrap(True)
+        center.addWidget(self.recent)
 
         row = QHBoxLayout()
         row.addStretch(1)
@@ -892,7 +940,10 @@ class MainWindow(QMainWindow):
             row = QHBoxLayout()
             slider = QSlider(Qt.Horizontal)
             slider.setRange(lo, hi)
-            slider.setValue(int(float(c.get(key, lo))))
+            start_val = float(c.get(key, lo))
+            if key == "stt_min_confidence_pct":
+                start_val = float(c.get("stt_min_confidence", 0.5)) * 100
+            slider.setValue(int(start_val))
             lbl = QLabel(str(slider.value()))
             lbl.setFixedWidth(40)
             slider.valueChanged.connect(lbl.setNum)
@@ -934,6 +985,26 @@ class MainWindow(QMainWindow):
         add_str(g3, "Кодовое слово", "wake_word", width=140)
         add_bool(g3, "Требовать кодовое слово перед командой", "require_wake_word")
         add_bool(g3, "Клавиша Ctrl+Space — говорить из любого места", "hotkey_enabled")
+        add_slider(g3, "Секунды диалога без кодового слова", "dialog_followup_sec", 0, 60)
+        add_slider(g3, "Мин. уверенность распознавания, %", "stt_min_confidence_pct", 0, 90)
+        # выбор микрофона
+        self.mic_combo = QComboBox()
+        try:
+            import speech_recognition as _sr
+            mics = _sr.Microphone.list_microphone_names()
+            self.mic_combo.addItem("По умолчанию", -1)
+            for i, name in enumerate(mics):
+                self.mic_combo.addItem(name, i)
+            cur = int(c.get("mic_device_index", -1))
+            idx = self.mic_combo.findData(cur)
+            if idx >= 0:
+                self.mic_combo.setCurrentIndex(idx)
+        except Exception:
+            self.mic_combo.addItem("Список недоступен", -1)
+        g3.addRow("Микрофон", self.mic_combo)
+        test_mic = QPushButton("🎙 Проверить микрофон")
+        test_mic.clicked.connect(self._test_mic)
+        g3.addRow(test_mic)
         mic_hint = QLabel("Микрофон включается кнопкой 🎙 в шапке окна.")
         mic_hint.setObjectName("dim")
         g3.addRow(mic_hint)
@@ -1072,6 +1143,34 @@ class MainWindow(QMainWindow):
                     self._chat_line("system",
                                     f"Команда «{name.strip()}» создана из записи.")
 
+    def _test_mic(self):
+        import threading
+        self._chat_line("system", "Проверяю микрофон: скажите что-нибудь…")
+
+        def run():
+            try:
+                import speech_recognition as sr
+                device_index = int(self.config_obj.get("mic_device_index", -1))
+                mic = (sr.Microphone(device_index=device_index)
+                       if device_index >= 0 else sr.Microphone())
+                r = sr.Recognizer()
+                with mic as source:
+                    r.adjust_for_ambient_noise(source, duration=0.5)
+                    audio = r.listen(source, timeout=5, phrase_time_limit=4)
+                try:
+                    text = r.recognize_google(
+                        audio, language=self.config_obj.get("language", "ru-RU"))
+                    self.events.put({"kind": "log", "level": "system",
+                                     "msg": f"Микрофон работает, услышала: «{text}» ✅"})
+                except Exception:
+                    self.events.put({"kind": "log", "level": "system",
+                                     "msg": "Микрофон ловит звук, но речь не распознана. "
+                                            "Говорите ближе и чётче."})
+            except Exception as exc:
+                self.events.put({"kind": "log", "level": "error",
+                                 "msg": f"Микрофон недоступен: {exc}"})
+        threading.Thread(target=run, daemon=True).start()
+
     def _test_ai(self):
         self._apply_settings()
         self.config_obj.save()
@@ -1115,6 +1214,10 @@ class MainWindow(QMainWindow):
             c.set("hotkeys", hk)
         idx = self.voice_combo.currentIndex()
         c.set("tts_voice_id", self.voice_ids[idx] if idx >= 0 else "")
+        if getattr(self, "mic_combo", None) is not None:
+            c.set("mic_device_index", self.mic_combo.currentData())
+        if "stt_min_confidence_pct" in v:
+            c.set("stt_min_confidence", float(v["stt_min_confidence_pct"].value()) / 100.0)
         if getattr(self, "projects_folder_edit", None) is not None:
             self.brain.memory.set_pref("projects_folder",
                                        self.projects_folder_edit.text().strip())
@@ -1156,7 +1259,10 @@ class MainWindow(QMainWindow):
             self.face.set_state(name)
             self._set_status(evt.get("label") or STATE_LABELS.get(name, ""), name)
         elif kind == "heard":
-            self.subtitle.setText(f"Вы: {evt['text']}")
+            conf = evt.get("confidence")
+            suffix = f"  ·  {int(conf * 100)}%" if isinstance(conf, (int, float)) else ""
+            self.subtitle.setText(f"🎙 «{evt['text']}»" + suffix)
+            self._recent_push(f"🎙 «{evt['text']}»")
         elif kind == "say_start":
             self.face.set_state("speaking")
             self._set_status("Говорю…", "speaking")
@@ -1177,6 +1283,9 @@ class MainWindow(QMainWindow):
         elif kind == "activity":
             icon = evt.get("icon", "•")
             self._chat_line("activity", f"{icon} {evt.get('desc', '')}")
+            self._recent_push(f"{icon} {evt.get('desc', '')}")
+        elif kind == "vu":
+            self.vu.set_levels(evt.get("levels") or [])
         elif kind == "mood":
             mood = evt.get("mood", "neutral")
             emoji = MOOD_EMOJI.get(mood, "😐")
@@ -1193,6 +1302,16 @@ class MainWindow(QMainWindow):
                 self.face.set_state("sleep")
             elif mood != "sleepy" and self.face._state == "sleep":
                 self.face.set_state("listening" if self.mic_active else "idle")
+
+    def _recent_push(self, line: str):
+        """Компактная лента недавних действий под лицом (последние 4)."""
+        import datetime as _dt
+        stamp = _dt.datetime.now().strftime("%H:%M")
+        current = self.recent.whatsThis() or ""
+        lines = [x for x in current.split("\n") if x][:3]
+        lines.insert(0, f"{stamp}  {line}")
+        self.recent.setText("\n".join(lines))
+        self.recent.setWhatsThis("\n".join(lines))
 
     def _set_status(self, text, state="idle"):
         big = {"listening": "LISTENING", "thinking": "PROCESSING",

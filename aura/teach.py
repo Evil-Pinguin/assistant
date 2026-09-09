@@ -119,9 +119,12 @@ class MacroRecorder:
                 except Exception:
                     pass
         self._m_listener = self._k_listener = None
-        actions = self._build_actions()
+        actions, stats = self._build_actions()
+        dropped = stats["raw"] - stats["clean"]
         self.emit("log", level="system",
-                  msg=f"⏹ Запись остановлена: {len(actions)} действий.")
+                  msg=f"⏹ Запись остановлена: {stats['raw']} сырых событий → "
+                      f"{stats['clean']} действий"
+                      + (f" (убрано лишних: {dropped})" if dropped > 0 else ""))
         return actions
 
     # ---------- внутреннее ----------
@@ -133,19 +136,52 @@ class MacroRecorder:
                 if text.strip():
                     self._events.append((time.time(), "type_text", text))
 
+    MIN_CLICK_INTERVAL = 0.3     # случайные двойные клики склеиваем
+    MIN_WAIT = 0.5               # паузы короче — мусор
+    MAX_WAIT = 10                # длинные паузы ограничиваем
+
     def _build_actions(self):
-        actions = []
-        prev_t = None
+        """Сырые события → чистая цепочка действий.
+
+        Очистка: склейка повторных кликов, слияние печати, нормализация пауз.
+        Возвращает (действия, статистика dict).
+        """
         with self._lock:
             events = list(self._events)
             self._events = []
+        raw_count = len(events)
+        cleaned = []
+        last_click = 0.0
+        prev_t = None
         for t, kind, payload in events:
-            if prev_t is not None and t - prev_t > 1.5:
-                actions.append({"type": "wait",
-                                "target": str(min(10, round(t - prev_t)))})
-            if kind in ("click", "press"):
-                actions.append({"type": kind, "target": payload})
-            else:
-                actions.append({"type": "type_text", "target": payload})
+            if kind == "click":
+                # дребезг: клики чаще 0.3 сек в той же точке — игнор
+                if t - last_click < self.MIN_CLICK_INTERVAL and cleaned and \
+                        cleaned[-1].get("target") == payload:
+                    prev_t = t
+                    continue
+                last_click = t
+                if prev_t is not None and t - prev_t >= self.MIN_WAIT:
+                    cleaned.append({"type": "wait",
+                                    "target": str(min(self.MAX_WAIT,
+                                                      round(t - prev_t, 1)))})
+                cleaned.append({"type": "click", "target": payload})
+            elif kind == "press":
+                if prev_t is not None and t - prev_t >= self.MIN_WAIT:
+                    cleaned.append({"type": "wait",
+                                    "target": str(min(self.MAX_WAIT,
+                                                      round(t - prev_t, 1)))})
+                cleaned.append({"type": "press", "target": payload})
+            else:  # type_text — склеиваем подряд идущую печать
+                if cleaned and cleaned[-1].get("type") == "type_text":
+                    cleaned[-1]["target"] = (cleaned[-1].get("target", "") +
+                                             payload)
+                else:
+                    if prev_t is not None and t - prev_t >= self.MIN_WAIT:
+                        cleaned.append({"type": "wait",
+                                        "target": str(min(self.MAX_WAIT,
+                                                          round(t - prev_t, 1)))})
+                    cleaned.append({"type": "type_text", "target": payload})
             prev_t = t
-        return actions
+        stats = {"raw": raw_count, "clean": len(cleaned)}
+        return cleaned, stats

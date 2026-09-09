@@ -262,6 +262,55 @@ def check_logic():
     except Exception as exc:
         report("Хоткеи: класс работает", False, str(exc))
 
+    # машина состояний
+    from aura.state import StateMachine
+    emitted = []
+    sm = StateMachine(lambda kind, **kw: emitted.append(kw) if kind == "state" else None)
+    sm.set("listening")
+    sm.set("processing")
+    report("Машина состояний: переходы и события",
+           sm.state == "processing" and len(emitted) == 2
+           and emitted[-1]["name"] == "processing" and sm.is_busy())
+
+    # resolver
+    from aura.resolver import resolve, BUILTIN_ALIASES
+    report("Resolver: алиасы и поиск в системе",
+           BUILTIN_ALIASES.get("браузер") == "chrome"
+           and resolve("python3")[1] in ("path", "shortcut", "running", "registry"))
+
+    # очистка записи (teach)
+    from aura.teach import MacroRecorder
+    rec = MacroRecorder()
+    base = __import__("time").time()
+    with rec._lock:
+        rec._events = [
+            (base + 0.0, "click", "100,200"),
+            (base + 0.1, "click", "100,200"),      # дребезг — уберётся
+            (base + 1.0, "type_text", "При"),
+            (base + 1.2, "type_text", "вет"),      # склеится с предыдущей
+            (base + 3.5, "click", "300,400"),      # пауза 2.3с → wait
+            (base + 3.6, "click", "300,400"),      # дребезг — уберётся
+        ]
+    actions, stats = rec._build_actions()
+    kinds = [a["type"] for a in actions]
+    report("Очистка записи: дребезг/слияние/паузы",
+           stats["raw"] == 6 and len(actions) == 5
+           and "wait" in kinds
+           and any(a.get("target") == "Привет" for a in actions))
+
+    # execute_actions возвращает (ok, failed)
+    with tempfile.TemporaryDirectory() as tmp:
+        cfgx = Config(os.path.join(tmp, "s.json"))
+        from aura.skills.actions import ActionContext, execute_actions
+        ctxx = ActionContext(say=lambda x: None, log=lambda *a, **k: None, config=cfgx)
+        res = execute_actions([{"type": "wait", "target": "0"},
+                               {"type": "несуществует"}], ctxx)
+        report("Действия: честный результат (ok, failed)", res == (1, 1))
+
+    # VU-уровни
+    from aura.ear import audio_levels
+    report("VU-метр: функция уровней", len(audio_levels(None)) == 16)
+
     # зрение: сборка сообщений
     from aura import vision as V
     msgs = V.vision_messages("что на экране?", b"jpegdata")

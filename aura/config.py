@@ -57,6 +57,12 @@ DEFAULTS = {
         "ctrl+3": "unity",
         "ctrl+4": "blender",
     },
+    # --- распознавание: диалог и уверенность ---
+    "dialog_followup_sec": 25,       # после ответа AURA слушает без кодового слова
+    "stt_min_confidence": 0.5,       # ниже — переспросит
+    "mic_device_index": -1,          # -1 = устройство по умолчанию
+    # --- реестр приложений: имя -> путь/exe (для resolver) ---
+    "app_registry": {},
     # --- быстрые запуски: имя -> что открывать ---
     "quick_launch": {
         "dev": "code + https://github.com",

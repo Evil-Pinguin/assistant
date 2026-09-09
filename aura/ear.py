@@ -31,6 +31,7 @@ class Ear:
         self._push = threading.Event()        # кнопка «Слушать» (push-to-talk)
         self._thread = None
         self._vosk_model = None
+        self.followup_until = 0.0             # диалог: слушаем без кодового слова
 
     # ---------- публичный API ----------
     def start(self):
@@ -75,13 +76,24 @@ class Ear:
         # «аврора», «авроры», «аврора слушай» и т.п.
         return any(tok.startswith(wake) for tok in text.split())
 
-    # --- распознавание ---
-    def _recognize(self, recognizer, source_audio) -> str:
+    # --- распознавание (текст + уверенность 0..1) ---
+    def _recognize(self, recognizer, source_audio):
         engine = (self.config.get("stt_engine") or "google").lower()
         if engine == "vosk":
-            return self._recognize_vosk(source_audio)
+            return self._recognize_vosk(source_audio), 0.9
         lang = self.config.get("language", "ru-RU")
-        return recognizer.recognize_google(source_audio, language=lang)
+        try:
+            data = recognizer.recognize_google(source_audio, language=lang,
+                                               show_all=True)
+            alts = (data or {}).get("alternative") or []
+            if alts:
+                best = alts[0]
+                conf = best.get("confidence")
+                text = (best.get("text") or "").strip()
+                return text, (float(conf) if conf is not None else 0.75)
+        except TypeError:  # старые версии без show_all
+            pass
+        return recognizer.recognize_google(source_audio, language=lang).strip(), 0.8
 
     def _recognize_vosk(self, audio) -> str:
         try:
@@ -96,7 +108,7 @@ class Ear:
             self._vosk_model = Model(path)
         rec = KaldiRecognizer(self._vosk_model, 16000)
         rec.AcceptWaveform(audio.get_raw_data(convert_rate=16000, convert_width=2))
-        return json.loads(rec.FinalResult()).get("text", "")
+        return json.loads(rec.FinalResult()).get("text", ""), 0.9
 
     # --- основной цикл ---
     def _loop(self):
@@ -104,7 +116,9 @@ class Ear:
         r.dynamic_energy_threshold = True
         r.energy_threshold = 300
         try:
-            mic = sr.Microphone()
+            device_index = int(self.config.get("mic_device_index", -1))
+            mic = (sr.Microphone(device_index=device_index)
+                   if device_index >= 0 else sr.Microphone())
         except Exception as exc:
             self._mic_failed(exc)
             return
@@ -148,8 +162,14 @@ class Ear:
                           label="Ожидаю…" if self.paused.is_set() else wait_label)
                 continue
 
+            # VU-метр: уровень захваченной фразы (проигрывается в UI)
             try:
-                text = self._recognize(r, audio)
+                self.emit("vu", levels=audio_levels(audio))
+            except Exception:
+                pass
+
+            try:
+                text, confidence = self._recognize(r, audio)
             except RuntimeError as exc:
                 self.emit("log", level="error", msg=str(exc))
                 self.emit("state", name="alert", label="Ошибка распознавания")
@@ -172,15 +192,30 @@ class Ear:
             if not text:
                 continue
             norm = self.normalize(text)
+            self.emit("heard", text=text, confidence=round(confidence, 2))
+
+            # низкая уверенность → честно переспросим
+            min_conf = float(self.config.get("stt_min_confidence", 0.5))
+            if confidence < min_conf and not push_talk:
+                self.emit("log", level="error",
+                          msg=f"Не уверена, что расслышала («{text}», "
+                              f"уверенность {confidence:.0%}). Повторите или напечатайте.")
+                self.emit("state", name="alert", label="НЕ РАСЛЫШАЛА")
+                continue
+
+            # диалоговый режим: после недавнего ответа AURA кодовое слово не нужно
+            in_dialog = time.time() < self.followup_until
 
             # режим кодового слова
-            if wake_required and not push_talk:
+            if wake_required and not push_talk and not in_dialog:
                 if not self._match_wake(norm):
                     continue
                 wake = self.normalize(self.config.get("wake_word", "аврора"))
                 rest = " ".join(t for t in norm.split() if not t.startswith(wake))
                 self.emit("heard", text=text)
                 if rest:                            # команда прозвучала сразу
+                    self.followup_until = time.time() + float(
+                        self.config.get("dialog_followup_sec", 25))
                     self.on_text(rest, "voice")
                 else:                                # ждём команду следом
                     self.emit("state", name="listening", label="Слушаю команду…")
@@ -191,11 +226,34 @@ class Ear:
                         cmd = ""
                     if cmd:
                         self.emit("heard", text=cmd)
+                        self.followup_until = time.time() + float(
+                            self.config.get("dialog_followup_sec", 25))
                         self.on_text(cmd, "voice")
                     else:
                         self.emit("log", level="system", msg="Команда не расслышана.")
                 continue
 
-            # прямой режим / push-to-talk
-            self.emit("heard", text=text)
+            # прямой режим / push-to-talk / диалог
+            if not wake_required or push_talk or in_dialog:
+                self.followup_until = time.time() + float(
+                    self.config.get("dialog_followup_sec", 25))
             self.on_text(text, "voice")
+
+def audio_levels(audio, chunks=16) -> list:
+    """Уровни громкости captured-фразы (0..1) для VU-метра."""
+    try:
+        data = audio.get_raw_data(convert_width=2)
+        import audioop
+        total = len(data)
+        step = max(1, total // chunks)
+        levels = []
+        for i in range(chunks):
+            part = data[i * step:(i + 1) * step]
+            if not part:
+                levels.append(0.0)
+                continue
+            rms = audioop.rms(part, 2)
+            levels.append(min(1.0, rms / 3000))
+        return levels
+    except Exception:
+        return [0.0] * chunks

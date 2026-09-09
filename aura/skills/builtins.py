@@ -617,30 +617,38 @@ def h_quick_launch(t, m, ctx):
 
 # --- фаза 2: «открой …» ---------------------------------------------------
 def h_open_generic(t, m, ctx):
+    """Фаза 2: «открой/запусти …» — resolver приложений, сайты, файлы, поиск."""
     what = (m.group("what") or "").strip()
     what = re.sub(r"^(сайт|страницу|страница|приложение|программу|программа|файл)\s+",
                   "", what)
     if not what:
         return None
-    if what in APP_TABLE and _open_named_app(what, ctx):
-        return f"Открываю {what}"
     if what in SITE_MAP:
         _open_url(SITE_MAP[what], ctx.action_ctx)
         return f"Открываю {what}"
     if what.startswith(("http", "www")) or ("." in what and " " not in what):
         _open_url(what, ctx.action_ctx)
         return f"Открываю {what}"
-    if " " not in what and (shutil.which(what) or _resolve_app(what)):
-        if not _open_named_app(what, ctx):
-            _open_app(what, ctx.action_ctx)
-        return f"Запускаю {what}"
-    # может, это файл?
+    # 1) resolver приложений: алиасы → PATH → ярлыки → запущенные
+    from ..resolver import resolve, describe_method
+    target, method = resolve(what, ctx.config)
+    if target:
+        if method == "running":
+            ctx.log(f"{what}: {describe_method(method)}")
+            return f"{what.capitalize()} уже запущено."
+        _open_app(target, ctx.action_ctx)
+        ctx.log(f"Открываю {what} ({describe_method(method)})")
+        return f"Открываю {what}"
+    # 2) встроенная таблица приложений
+    if what in APP_TABLE and _open_named_app(what, ctx):
+        return f"Открываю {what}"
+    # 3) может, это файл?
     found = F.find_files(what, ctx.memory, limit=1)
     if found:
         _open_app(found[0], ctx.action_ctx)
         return f"Открываю файл {os.path.basename(found[0])}"
     _open_url(f"https://www.google.com/search?q={what.replace(' ', '+')}", ctx.action_ctx)
-    return f"Не знаю такой адрес, ищу в Google: {what}"
+    return f"Локальной команды «{what}» не нашла, ищу в интернете."
 
 
 # ==========================================================================
