@@ -137,19 +137,13 @@ class FaceImageWidget(QWidget):
             self._state = self._resume or "idle"
 
         # кроссфейд
-        self._fade = min(1.0, self._fade + 0.09)
+        self._fade = min(1.0, self._fade + 0.25)
 
         p.fillRect(0, 0, w, h, QColor("#0a0f1c"))
 
-        # --- «дыхание» камеры ---
-        breath = 1.014 + 0.014 * math.sin(t * 1.05)
-        dy = 0.0
-        if state == "speaking":
-            dy = 3.0 * math.sin(t * 7.3) + 1.6 * math.sin(t * 11.7)
-        elif state == "listening":
-            dy = 1.2 * math.sin(t * 2.2)
-        elif state == "sleep":
-            dy = 2.0 * math.sin(t * 0.8)
+        # --- статичный кадр: никаких зумов и покачиваний (пиксель-арт) ---
+        breath = 1.0
+        dy = 0
 
         base = self._pixmaps.get("error" if state == "alert" else state)
         prev = self._pixmaps.get(self._prev_state)
@@ -159,10 +153,12 @@ class FaceImageWidget(QWidget):
                 return
             pw, ph = pix.width(), pix.height()
             scale = max(w / pw, h / ph) * breath
-            dw, dh = pw * scale, ph * scale
-            dx = (w - dw) / 2
-            dyy = (h - dh) / 2 + dy
+            dw, dh = int(pw * scale), int(ph * scale)
+            dx = int((w - dw) / 2)
+            dyy = int((h - dh) / 2) + dy
             p.setOpacity(opacity)
+            # FastTransformation сохраняет чёткие пиксели
+            p.setRenderHint(QPainter.SmoothPixmapTransform, False)
             p.drawPixmap(QRectF(dx, dyy, dw, dh).toRect(), pix)
 
         # уходящее состояние (при кроссфейде)
@@ -186,7 +182,8 @@ class FaceImageWidget(QWidget):
         elif state == "speaking":
             self._draw_wave(p, w, h, t, (60, 255, 190))
         elif state in ("error", "alert"):
-            self._draw_glitch(p, w, h, t)
+            if (t * 2) % 8 < 1.2:          # короткая вспышка раз в ~4 сек
+                self._draw_glitch(p, w, h, t)
         elif state == "thinking":
             self._draw_orbit(p, w, h, t)
         elif state == "sleep":
@@ -197,16 +194,16 @@ class FaceImageWidget(QWidget):
 
     # ------------------------------------------------------------------
     def _draw_wave(self, p: QPainter, w, h, t, rgb):
-        bars, span = 26, min(w * 0.78, 300)
+        bars, span = 22, min(w * 0.72, 260)
         x0 = (w - span) / 2
-        base_y = h - 14
+        base_y = h - 12
         p.setPen(Qt.NoPen)
         for i in range(bars):
             x = x0 + span * i / (bars - 1)
-            amp = (math.sin(t * 6 + i * 0.9) * 0.5 + 0.5) * \
-                  (math.sin(t * 2.3 + i * 0.37) * 0.5 + 0.5)
-            bh = 3 + amp * 13
-            p.setBrush(QColor(*rgb, 130))
+            amp = (math.sin(t * 3.2 + i * 0.9) * 0.5 + 0.5) * \
+                  (math.sin(t * 1.3 + i * 0.37) * 0.5 + 0.5)
+            bh = 3 + amp * 8
+            p.setBrush(QColor(*rgb, 110))
             p.drawRoundedRect(QRectF(x - 1.5, base_y - bh / 2, 3, bh), 1.5, 1.5)
 
     def _draw_glitch(self, p: QPainter, w, h, t):
@@ -260,8 +257,8 @@ class FaceImageWidget(QWidget):
             pm.fill(Qt.transparent)
             q = QPainter(pm)
             q.setPen(Qt.NoPen)
-            for y in range(0, h, 3):
-                q.setBrush(QColor(0, 0, 0, 14))
+            for y in range(0, h, 4):
+                q.setBrush(QColor(0, 0, 0, 10))
                 q.drawRect(0, y, w, 1)
             q.end()
             self._scanlines = pm

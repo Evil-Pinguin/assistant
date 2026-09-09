@@ -263,9 +263,9 @@ def check_gui():
                     win.face._tick()
                     app.processEvents()
             win.face.set_state("idle")
-            ok = (win.tabs.count() == 7 and win.cmd_list is not None
+            ok = (win.tabs.count() == 5 and win.cmd_list is not None
                   and win.perm_combos)
-            report("Окно Command Center строится (7 вкладок)", ok)
+            report("Окно Command Center строится (5 вкладок)", ok)
             # сохраняем скриншот для документации
             shots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                      "docs")

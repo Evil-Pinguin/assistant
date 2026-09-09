@@ -445,24 +445,18 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         body.addWidget(self.tabs, 1)
         self.tab_chat = QWidget()
-        self.tab_activity = QWidget()
         self.tab_cmds = QWidget()
         self.tab_profiles = QWidget()
-        self.tab_memory = QWidget()
         self.tab_perms = QWidget()
         self.tab_settings = QWidget()
-        self.tabs.addTab(self.tab_chat, "Диалог")
-        self.tabs.addTab(self.tab_activity, "Активность")
-        self.tabs.addTab(self.tab_cmds, "Команды")
-        self.tabs.addTab(self.tab_profiles, "Режимы")
-        self.tabs.addTab(self.tab_memory, "Память")
-        self.tabs.addTab(self.tab_perms, "Разрешения")
-        self.tabs.addTab(self.tab_settings, "Настройки")
+        for label, widget in (("💬 Диалог", self.tab_chat), ("⚡ Команды", self.tab_cmds),
+                              ("🎮 Режимы", self.tab_profiles),
+                              ("🛡 Разрешения", self.tab_perms),
+                              ("⚙ Настройки", self.tab_settings)):
+            self.tabs.addTab(widget, label)
         self._build_chat(self.tab_chat)
-        self._build_activity(self.tab_activity)
         self._build_commands(self.tab_cmds)
         self._build_profiles(self.tab_profiles)
-        self._build_memory(self.tab_memory)
         self._build_perms(self.tab_perms)
         self._build_settings(self.tab_settings)
 
@@ -488,10 +482,25 @@ class MainWindow(QMainWindow):
     # вкладки
     # ==================================================================
     def _build_chat(self, tab):
-        lay = QVBoxLayout(tab)
+        split = QHBoxLayout(tab)
+        split.setContentsMargins(0, 0, 0, 0)
         self.chat = QTextBrowser()
         self.chat.setOpenExternalLinks(True)
-        lay.addWidget(self.chat, 1)
+        split.addWidget(self.chat, 3)
+        right = QVBoxLayout()
+        cap = QLabel("Активность")
+        cap.setObjectName("dim")
+        right.addWidget(cap)
+        self.activity_tree = QTreeWidget()
+        self.activity_tree.setHeaderLabels(["Время", "Действие"])
+        self.activity_tree.header().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.activity_tree.setRootIsDecorated(False)
+        self.activity_tree.setMaximumWidth(280)
+        right.addWidget(self.activity_tree, 1)
+        undo = QPushButton("⏪ Отменить последнее")
+        undo.clicked.connect(lambda: self.brain.undo_last_async())
+        right.addWidget(undo)
+        split.addLayout(right)
         self._chat_line("system", "AURA запущена. Готова к работе.")
 
     def _chat_line(self, level, msg):
@@ -502,29 +511,6 @@ class MainWindow(QMainWindow):
             f"<span style='color:{FG_DIM};font-size:8pt'>"
             f"{icons.get(level, '•')} </span>"
             f"<span style='color:{colors.get(level, FG_DIM)}'>{safe}</span>")
-
-    def _build_activity(self, tab):
-        lay = QVBoxLayout(tab)
-        self.activity_tree = QTreeWidget()
-        self.activity_tree.setHeaderLabels(["Время", "Действие", "↶"])
-        self.activity_tree.header().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.activity_tree.setRootIsDecorated(False)
-        lay.addWidget(self.activity_tree, 1)
-        row = QHBoxLayout()
-        undo = QPushButton("⏪ Отменить последнее")
-        undo.setObjectName("accent")
-        undo.clicked.connect(lambda: self.brain.undo_last_async())
-        clear = QPushButton("Очистить журнал")
-        clear.setObjectName("danger")
-        clear.clicked.connect(self._clear_activity)
-        row.addWidget(undo)
-        row.addWidget(clear)
-        row.addStretch(1)
-        lay.addLayout(row)
-
-    def _clear_activity(self):
-        self.brain.activity.clear()
-        self.activity_tree.clear()
 
     def _build_commands(self, tab):
         lay = QGridLayout(tab)
@@ -758,59 +744,6 @@ class MainWindow(QMainWindow):
             self.brain.handle(f"режим {name}", "text")
 
     # ------------------- память -------------------
-    def _build_memory(self, tab):
-        lay = QGridLayout(tab)
-        left = QVBoxLayout()
-        lbl = QLabel("Предпочтения (AURA учитывает их в разговоре)")
-        lbl.setObjectName("dim")
-        left.addWidget(lbl)
-        self.prefs_table = QTableWidget(0, 2)
-        self.prefs_table.setHorizontalHeaderLabels(["Ключ", "Значение"])
-        self.prefs_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        left.addWidget(self.prefs_table, 1)
-        add_pref = QPushButton("＋ Добавить строку")
-        add_pref.clicked.connect(lambda: self.prefs_table.insertRow(
-            self.prefs_table.rowCount()))
-        left.addWidget(add_pref)
-        lay.addLayout(left, 0, 0)
-        right = QVBoxLayout()
-        lbl2 = QLabel("Факты (по одному в строке)")
-        lbl2.setObjectName("dim")
-        right.addWidget(lbl2)
-        self.facts_edit = QPlainTextEdit()
-        right.addWidget(self.facts_edit, 1)
-        save = QPushButton("💾 Сохранить память")
-        save.setObjectName("accent")
-        save.clicked.connect(self._memory_save)
-        right.addWidget(save)
-        lay.addLayout(right, 0, 1)
-        lay.setColumnStretch(1, 2)
-        self._memory_fill()
-
-    def _memory_fill(self):
-        mem = self.brain.memory
-        self.prefs_table.setRowCount(0)
-        for k, v in sorted(mem.prefs.items()):
-            r = self.prefs_table.rowCount()
-            self.prefs_table.insertRow(r)
-            self.prefs_table.setItem(r, 0, QTableWidgetItem(k))
-            self.prefs_table.setItem(r, 1, QTableWidgetItem(v))
-        self.facts_edit.setPlainText("\n".join(mem.facts))
-
-    def _memory_save(self):
-        mem = self.brain.memory
-        prefs = {}
-        for r in range(self.prefs_table.rowCount()):
-            k = self.prefs_table.item(r, 0)
-            v = self.prefs_table.item(r, 1)
-            if k and v and k.text().strip():
-                prefs[k.text().strip().lower()] = v.text().strip()
-        mem.prefs = prefs
-        mem.facts = [x.strip() for x in self.facts_edit.toPlainText().splitlines()
-                     if x.strip()]
-        mem.save()
-        self._chat_line("system", "Память сохранена.")
-
     # ------------------- разрешения -------------------
     def _build_perms(self, tab):
         from .permissions import CATEGORIES, LEVEL_TITLES
@@ -881,14 +814,15 @@ class MainWindow(QMainWindow):
         form.setSpacing(6)
         self.set_vars = {}
 
-        def group(title):
+        def group(title, checkable=False, checked=True):
             g = QGroupBox(title)
+            g.setCheckable(checkable)
+            g.setChecked(checked)
             gl = QFormLayout(g)
-            gl.setLabelAlignment(Qt.AlignLeft)
             form.addWidget(g)
             return gl
 
-        def add_str(g, title, key, password=False, width=280):
+        def add_str(g, title, key, password=False, width=300):
             e = QLineEdit(str(c.get(key, "") or ""))
             if password:
                 e.setEchoMode(QLineEdit.Password)
@@ -926,15 +860,15 @@ class MainWindow(QMainWindow):
             g.addRow(title, row)
             self.set_vars[key] = slider
 
-        # --- персона ---
+        # --- Персона ---
         g1 = group("👤 Персона")
         add_str(g1, "Как меня называть", "user_name", width=160)
         add_str(g1, "Город для погоды", "city", width=160)
         add_combo(g1, "Характер речи", "personality",
-                  ["professional", "friendly", "jarvis", "anime"])
-        add_slider(g1, "Засыпать после (мин)", "sleep_after_min", 1, 60)
+                  ["friendly", "professional", "jarvis", "anime"])
+        add_slider(g1, "Засыпать после (минут тишины)", "sleep_after_min", 1, 60)
 
-        # --- голос ---
+        # --- Голос ---
         g2 = group("🗣 Голос")
         add_bool(g2, "Озвучивать ответы", "tts_enabled")
         add_slider(g2, "Скорость речи", "tts_rate", 100, 260)
@@ -954,33 +888,51 @@ class MainWindow(QMainWindow):
             "Привет! Я Аврора. Проверка голоса завершена."))
         g2.addRow(test)
 
-        # --- слух ---
-        g3 = group("👂 Слух")
+        # --- Голосовое управление ---
+        g3 = group("👂 Голосовое управление")
         add_str(g3, "Кодовое слово", "wake_word", width=140)
-        add_bool(g3, "Требовать кодовое слово", "require_wake_word")
-        add_combo(g3, "Язык распознавания", "language",
-                  ["ru-RU", "en-US", "uk-UA", "de-DE", "fr-FR", "es-ES"])
-        add_combo(g3, "Движок распознавания", "stt_engine", ["google", "vosk"])
-        add_str(g3, "Путь к модели Vosk", "vosk_model_path", width=340)
-        add_bool(g3, "Глобальная клавиша Ctrl+Space (говорить)", "hotkey_enabled")
+        add_bool(g3, "Требовать кодовое слово перед командой", "require_wake_word")
+        add_bool(g3, "Клавиша Ctrl+Space — говорить из любого места", "hotkey_enabled")
+        mic_hint = QLabel("Микрофон включается кнопкой 🎙 в шапке окна.")
+        mic_hint.setObjectName("dim")
+        g3.addRow(mic_hint)
 
-        # --- ИИ ---
-        g4 = group("🤖 Нейросеть (OpenAI-совместимый API)")
-        add_bool(g4, "Отвечать через ИИ, если команда не распознана", "ai_enabled")
+        # --- Нейросеть ---
+        g4 = group("🤖 Нейросеть")
+        add_bool(g4, "Включить ИИ (отвечает, когда не поняла команду)", "ai_enabled")
         add_str(g4, "Base URL", "ai_base_url", width=340)
         add_str(g4, "API-ключ", "ai_api_key", password=True, width=340)
         add_str(g4, "Модель", "ai_model", width=200)
-        add_bool(g4, "Разрешить ИИ выполнять действия на ПК", "ai_allow_actions")
-        add_bool(g4, "Зрение: анализ скриншотов", "vision_enabled")
-        add_str(g4, "Vision-модель (пусто = основная)", "vision_model", width=200)
-        test_ai = QPushButton("📡 Проверить связь с ИИ")
+        add_bool(g4, "ИИ может выполнять действия на ПК", "ai_allow_actions")
+        add_bool(g4, "Зрение: анализ экрана по запросу", "vision_enabled")
+        test_ai = QPushButton("📡 Проверить связь")
         test_ai.clicked.connect(self._test_ai)
         g4.addRow(test_ai)
 
-        # --- прочее ---
-        g5 = group("🧩 Прочее")
-        add_str(g5, "Ссылка «включи музыку»", "music_url", width=340)
-        add_str(g5, "Папка для скриншотов", "screenshots_dir", width=340)
+        # --- Память ---
+        g5 = group("🧠 Память")
+        mem_hint = QLabel("Скажите «запомни: …» — или впишите факты тут, по одному в строке.")
+        mem_hint.setObjectName("dim")
+        g5.addRow(mem_hint)
+        self.facts_edit = QPlainTextEdit()
+        self.facts_edit.setMaximumHeight(90)
+        self.facts_edit.setPlainText("\n".join(self.brain.memory.facts))
+        g5.addRow(self.facts_edit)
+
+        # --- Продвинутые (свёрнуты по умолчанию) ---
+        g6 = group("🔧 Продвинутые настройки (редко нужны)", checkable=True, checked=False)
+        add_combo(g6, "Язык распознавания", "language",
+                  ["ru-RU", "en-US", "uk-UA", "de-DE", "fr-FR", "es-ES"])
+        add_combo(g6, "Движок распознавания", "stt_engine", ["google", "vosk"])
+        add_str(g6, "Путь к модели Vosk (офлайн)", "vosk_model_path", width=340)
+        add_str(g6, "Vision-модель (пусто = основная)", "vision_model", width=200)
+        add_str(g6, "Ссылка «включи музыку»", "music_url", width=340)
+        add_str(g6, "Папка для скриншотов", "screenshots_dir", width=340)
+        add_bool(g6, "Подтверждать выключение ПК", "confirm_power")
+        self.projects_folder_edit = QLineEdit(
+            str(self.brain.memory.get_pref("projects_folder", "")))
+        self.projects_folder_edit.setFixedWidth(340)
+        g6.addRow("Папка проектов", self.projects_folder_edit)
 
         save = QPushButton("💾 СОХРАНИТЬ НАСТРОЙКИ")
         save.setObjectName("accent")
@@ -1086,9 +1038,16 @@ class MainWindow(QMainWindow):
                 c.set(key, w.text().strip())
         idx = self.voice_combo.currentIndex()
         c.set("tts_voice_id", self.voice_ids[idx] if idx >= 0 else "")
+        if getattr(self, "projects_folder_edit", None) is not None:
+            self.brain.memory.set_pref("projects_folder",
+                                       self.projects_folder_edit.text().strip())
 
     def _save_settings(self):
         self._apply_settings()
+        self.brain.memory.facts = [x.strip()
+                                   for x in self.facts_edit.toPlainText().splitlines()
+                                   if x.strip()]
+        self.brain.memory.save()
         self.config_obj.save()
         self._chat_line("system", "Настройки сохранены ✓")
 
