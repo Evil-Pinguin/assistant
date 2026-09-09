@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Пользовательские команды из data/custom_commands.json.
+"""Пользовательские команды AURA из data/custom_commands.json.
 
 Формат:
 {

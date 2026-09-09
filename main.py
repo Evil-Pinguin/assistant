@@ -1,95 +1,122 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""J.A.R.V.I.S. — голосовой ассистент с лицом и ИИ. Точка входа.
+"""AURA — персональный ИИ-ассистент. Точка входа.
 
 Запуск:  python main.py
-Если tkinter не установлен — запустится консольный режим (без лица).
+Без PySide6 запустится консольный режим (без лица).
 """
+import logging
 import os
 import queue
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from jarvis.config import Config, DATA_DIR, LOG_FILE   # noqa: E402
+from aura.config import Config, DATA_DIR, LOG_FILE  # noqa: E402
 
 
 def make_logger():
-    import logging
     os.makedirs(DATA_DIR, exist_ok=True)
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
         handlers=[logging.FileHandler(LOG_FILE, encoding="utf-8"),
                   logging.StreamHandler(sys.stdout)])
-    return logging.getLogger("jarvis")
+    return logging.getLogger("aura")
 
 
-def main():
-    log = make_logger()
-    config = Config()
-
-    events: "queue.Queue[dict]" = queue.Queue()
+def build_core(config, events):
+    """Создать общие компоненты (используются и GUI, и консолью)."""
+    from aura.voice import Voice
+    from aura.ear import Ear
+    from aura.brain import Brain
+    from aura.plugins import load_plugins
 
     def emit(kind, **data):
         events.put({"kind": kind, **data})
 
-    # --- компоненты ---
-    from jarvis.voice import Voice
-    from jarvis.ear import Ear
-    from jarvis.brain import Brain
-
     voice = Voice(config, emit)
+    brain = Brain(config, voice, emit)
     ear = Ear(config, emit, on_text=lambda text, src: brain.handle(text, src))
-    brain = Brain(config, voice, emit, ear=ear)
+    load_plugins(brain)
+    return emit, voice, ear, brain
 
-    def drain_console():
-        """Печать событий в консоль (для CLI-режима и отладки)."""
+
+def run_console(config):
+    events = queue.Queue()
+    emit, voice, ear, brain = build_core(config, events)
+    print("=" * 62)
+    print("  AURA · Аврора — консольный режим (нет PySide6)")
+    print("  Печатайте команды. Для выхода: exit")
+    print("=" * 62)
+
+    def drain():
         while True:
             try:
                 evt = events.get(timeout=0.1)
             except queue.Empty:
                 continue
-            kind = evt.get("kind")
-            if kind == "log":
-                icon = {"user": "🗣", "jarvis": "🤖", "error": "❌"}.get(
+            if evt.get("kind") == "log":
+                icon = {"user": "🗣", "aura": "💠", "error": "❌"}.get(
                     evt.get("level"), "•")
                 print(f"{icon} {evt.get('msg', '')}")
 
-    # --- GUI или консоль ---
+    import threading
+    threading.Thread(target=drain, daemon=True).start()
     try:
-        import tkinter  # noqa: F401
-        from jarvis.gui import JarvisApp
-    except ImportError as exc:
-        print("=" * 60)
-        print(f"tkinter недоступен ({exc}) — запускаю консольный режим.")
-        print("Печатайте команды. Для выхода: exit")
-        print("=" * 60)
-        import threading
-        threading.Thread(target=drain_console, daemon=True).start()
-        try:
-            while True:
-                text = input("Вы> ").strip()
-                if text.lower() in ("exit", "quit", "выход"):
-                    break
-                if text:
-                    brain.handle(text, "text")
-        except (KeyboardInterrupt, EOFError):
-            pass
-        finally:
-            ear.stop()
-            voice.shutdown()
-        return
-
-    app = JarvisApp(config, voice, ear, brain, events)
-    log.info("JARVIS запущен")
-    try:
-        app.mainloop()
+        while True:
+            text = input("Вы> ").strip()
+            if text.lower() in ("exit", "quit", "выход"):
+                break
+            if text:
+                brain.handle(text, "text")
+    except (KeyboardInterrupt, EOFError):
+        pass
     finally:
         ear.stop()
         voice.shutdown()
-        log.info("JARVIS остановлен")
+
+
+def run_gui(config, log):
+    from PySide6.QtWidgets import QApplication
+    from aura.gui import MainWindow
+    from aura.hotkey import GlobalHotkeys
+    from aura.teach import MacroRecorder
+
+    app = QApplication(sys.argv)
+    app.setApplicationName("AURA")
+    events = queue.Queue()
+    emit, voice, ear, brain = build_core(config, events)
+
+    hotkeys = GlobalHotkeys(on_talk=lambda: ear.listen_once())
+    if config.get("hotkey_enabled", True) and hotkeys.available:
+        if hotkeys.start():
+            log.info("Глобальная клавиша Ctrl+Space активна")
+    elif not hotkeys.available:
+        log.info("pynput не установлен — глобальные клавиши отключены "
+                 "(pip install pynput)")
+
+    recorder = MacroRecorder(emit=emit)
+    win = MainWindow(config, voice, ear, brain, events,
+                     hotkeys=hotkeys, recorder=recorder)
+    win.show()
+    log.info("AURA запущена")
+    code = app.exec()
+    ear.stop()
+    voice.shutdown()
+    return code
+
+
+def main():
+    log = make_logger()
+    config = Config()
+    try:
+        import PySide6  # noqa: F401
+        return run_gui(config, log)
+    except ImportError:
+        run_console(config)
+        return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

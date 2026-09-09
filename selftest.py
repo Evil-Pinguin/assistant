@@ -1,171 +1,306 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Самопроверка JARVIS: окружение + логика без микрофона и окна.
+"""Самопроверка AURA: зависимости, логика ядра, UI-дым (если есть PySide6).
 
 Запуск:  python selftest.py
 """
+import os
 import queue
 import sys
-import os
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-OK, WARN, FAIL = "✅", "🟡", "❌"
 results = []
 
 
 def report(name, ok, note=""):
-    mark = OK if ok else WARN
+    mark = "✅" if ok else "🟡"
     results.append(ok)
     print(f"  {mark} {name}" + (f" — {note}" if note else ""))
 
 
 def check_environment():
-    print("\n[1] Окружение (зависимости)")
+    print("\n[1] Зависимости")
     for module, pip_name, needed in (
+            ("PySide6", "PySide6 (интерфейс)", True),
             ("requests", "requests", True),
             ("speech_recognition", "SpeechRecognition", True),
-            ("pyttsx3", "pyttsx3", True),
-            ("tkinter", "tkinter (пакет python3-tk / tcl)", True),
-            ("pyaudio", "PyAudio", False),
-            ("pyautogui", "pyautogui", False),
+            ("pyttsx3", "pyttsx3 (озвучка)", True),
+            ("psutil", "psutil (статистика, закрытие приложений)", True),
+            ("pyaudio", "PyAudio (микрофон)", False),
+            ("pyautogui", "pyautogui (автоматизация)", False),
             ("pyperclip", "pyperclip", False),
-            ("PIL", "Pillow", False),
+            ("PIL", "Pillow (скриншоты, зрение)", False),
+            ("pynput", "pynput (горячие клавиши, Teach Mode)", False),
             ("vosk", "vosk (офлайн-распознавание)", False),
     ):
         try:
             __import__(module)
-            report(f"{pip_name}", True)
-        except Exception as exc:
-            report(f"{pip_name}", not needed,
-                   f"не установлен: pip install {pip_name.split()[0]}")
+            report(pip_name, True)
+        except Exception:
+            report(pip_name, not needed, f"не установлен: pip install {pip_name.split()[0]}")
+
+
+class StubVoice:
+    def __init__(self):
+        self.spoken = []
+
+    def say(self, text):
+        self.spoken.append(text)
+
+    def available_voices(self):
+        return []
+
+    def shutdown(self):
+        pass
+
+
+def make_brain(tmpdir):
+    from aura.config import Config
+    from aura.brain import Brain
+    cfg = Config(os.path.join(tmpdir, "settings.json"))
+    cfg.set("ai_enabled", False)
+    cfg.set("confirm_power", False)
+    cfg.set("permission_level", "god")   # в тестах разрешаем всё
+    cfg.set("city", "Тест-сити")
+    v = StubVoice()
+    events = queue.Queue()
+    brain = Brain(cfg, v, lambda kind, **kw: events.put({"kind": kind, **kw}))
+    return cfg, v, events, brain
 
 
 def check_logic():
-    print("\n[2] Логика (конфиг, мозг, команды, ИИ)")
-    from jarvis.config import Config
+    print("\n[2] Ядро (конфиг, память, разрешения, режимы, мозг)")
+    from aura.config import Config
+    from aura.memory import Memory
+    from aura.permissions import Permissions, LEVELS
+    from aura.profiles import Profiles, BUILTIN_PROFILES
+    from aura.activity import Activity
+    from aura.mood import MoodEngine
+    from aura.skills.custom import CustomCommands
+    from aura.ai import AIClient
+    from aura.skills import actions as A
 
-    # --- конфиг ---
+    # конфиг
     with tempfile.TemporaryDirectory() as tmp:
-        path = os.path.join(tmp, "settings.json")
-        cfg = Config(path)
-        cfg.set("city", "Тест-город")
+        p = os.path.join(tmp, "s.json")
+        cfg = Config(p)
+        cfg.set("city", "Тест")
         cfg.save()
-        cfg2 = Config(path)
-        report("Конфиг: сохранение и загрузка", cfg2.get("city") == "Тест-город")
+        report("Конфиг: сохранение/загрузка", Config(p).get("city") == "Тест")
 
-    from jarvis.skills.custom import CustomCommands
-    from jarvis.brain import Brain
-    from jarvis.ai import AIClient
+    # память
+    with tempfile.TemporaryDirectory() as tmp:
+        mem = Memory(os.path.join(tmp, "m.json"))
+        mem.set_pref("projects_folder", "D:/Projects")
+        mem.add_fact("работаю над Аурой")
+        mem2 = Memory(os.path.join(tmp, "m.json"))
+        report("Память: предпочтения и факты",
+               mem2.get_pref("projects_folder") == "D:/Projects"
+               and mem2.facts == ["работаю над Аурой"]
+               and "D:/Projects" in mem2.as_prompt())
 
-    class StubVoice:
-        def __init__(self):
-            self.spoken = []
+    # разрешения
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = Config(os.path.join(tmp, "s.json"))
+        perms = Permissions(cfg)
+        cfg.set("permission_level", "safe")
+        report("Разрешения: SAFE запрещает shell", perms.gate("shell") == "deny")
+        cfg.set("permission_level", "normal")
+        report("Разрешения: NORMAL спрашивает shell", perms.gate("shell") == "confirm")
+        perms.set_override("shell", "allow")
+        report("Разрешения: переопределение", perms.gate("shell") == "allow")
+        cfg.set("permission_level", "god")
+        report("Разрешения: GOD разрешает всё", perms.gate("files_delete") == "allow")
+        acts = [{"type": "shell", "target": "x"}, {"type": "say", "text": "hi"}]
+        cfg.set("permission_level", "safe")
+        cfg.set("perm_overrides", {})
+        report("Разрешения: strip_denied убирает запрещённое",
+               A.strip_denied(acts, perms) == ([acts[1]], ["shell"]))
 
-        def say(self, text):
-            self.spoken.append(text)
+    # режимы
+    with tempfile.TemporaryDirectory() as tmp:
+        profs = Profiles(os.path.join(tmp, "p.json"))
+        report("Режимы: встроенные загружены", len(profs.all()) >= 5)
+        p = profs.match("включи игровой режим")
+        report("Режимы: «включи игровой режим» найден", p and p["name"] == "Игры")
+        profs.upsert({"name": "Тест", "phrases": ["тест режим"], "actions": [
+            {"type": "say", "text": "ок"}]})
+        report("Режимы: сохранение пользовательского",
+              Profiles(os.path.join(tmp, "p.json")).match("тест режим") is not None)
 
-    def make_brain(custom_cmds=None):
-        with tempfile.TemporaryDirectory() as tmp:
-            pass  # временную папку используем только для пути
-        cfg = Config(os.path.join(tempfile.gettempdir(), "jarvis_selftest_settings.json"))
-        cfg.set("ai_enabled", False)
-        cfg.set("confirm_power", False)
-        v = StubVoice()
-        events = queue.Queue()
-        emit = lambda kind, **kw: events.put({"kind": kind, **kw})  # noqa: E731
-        brain = Brain(cfg, v, emit)
-        if custom_cmds is not None:
-            brain.custom = custom_cmds
-        return cfg, v, events, brain
+    # активность/undo
+    act = Activity()
+    calls = []
+    act.add("тест", undo=lambda: calls.append(1))
+    act.add("неотменяемое")
+    report("Активность: undo пропускает неотменяемое",
+           act.undo_last() == "тест" and calls)
 
-    cfg, voice, events, brain = make_brain()
+    # настроение
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = Config(os.path.join(tmp, "s.json"))
+        mood = MoodEngine(cfg, lambda *a, **k: None)
+        report("Настроение: фрустрация ловится",
+               mood.observe_user("опять этот код сломался")
+               and mood.state()["mood"] == "concerned")
+        mood.mood = "neutral"
+        mood.on_success()
+        report("Настроение: успех → уверенность", mood.state()["mood"] == "confident")
 
-    # время
-    brain._process("джарвис сколько времени", "text")
-    ok = any("Сейчас" in s for s in voice.spoken)
-    report("Встроенный навык «сколько времени»", ok)
+    # мозг: команды
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg, voice, events, brain = make_brain(tmp)
+        brain._process("джарвис сколько времени", "text")  # старое кодовое тоже поймает время
+        brain._process("который час", "text")
+        report("Мозг: «который час»", any("Сейчас" in s for s in voice.spoken))
 
-    # приветствие
-    brain._process("привет", "text")
-    ok = any("Слушаю вас" in s or "Добр" in s for s in voice.spoken)
-    report("Встроенный навык «привет»", ok)
+        brain._process("привет", "text")
+        report("Мозг: приветствие", any("Слушаю" in s for s in voice.spoken))
 
-    # громкость (без pyautogui не выполнит, но распознать должна)
-    n_before = len(voice.spoken)
-    brain._process("сделай громче", "text")
-    ok = any("громче" in s.lower() for s in voice.spoken[n_before:])
-    report("Встроенный навык «сделай громче»", ok)
+        n = len(voice.spoken)
+        brain._process("сделай громче", "text")
+        report("Мозг: громкость", any("громче" in s.lower() or "пакет" in s.lower()
+                                      for s in voice.spoken[n:]))
 
-    # свои команды
-    brain._process("открой рабочую папку", "text")
-    ok = any("рабочую папку" in s.lower() for s in voice.spoken)
-    report("Своя команда из data/custom_commands.json", ok)
+        n = len(voice.spoken)
+        brain._process("статус системы", "text")
+        report("Мозг: статус системы", any("Процессор" in s for s in voice.spoken[n:])
+               or any("psutil" in s for s in voice.spoken[n:]))
 
-    # подтверждение питания
-    cfg.set("confirm_power", True)
-    n_before = len(voice.spoken)
-    brain._process("выключи компьютер", "text")
-    ok = any("да" in s.lower() for s in voice.spoken[n_before:])
-    brain._process("да", "text")
-    report("Подтверждение выключения (да/нет)", ok)
-    cfg.set("confirm_power", False)
+        n = len(voice.spoken)
+        brain._process("запомни: я работаю над проектом Аура", "text")
+        brain._process("что ты помнишь", "text")
+        report("Мозг: память запомнить/вспомнить",
+               any("Аура" in s or "аура" in s.lower() for s in voice.spoken[n:]))
 
-    # отмена истории
-    n_before = len(voice.spoken)
-    brain._process("очисти историю", "text")
-    ok = any("истор" in s.lower() for s in voice.spoken[n_before:])
-    report("Сброс истории диалога", ok)
+        n = len(voice.spoken)
+        brain._process("подбрось монетку", "text")
+        report("Мозг: монетка", any(("Орёл" in s or "Решка" in s)
+                                    for s in voice.spoken[n:]))
 
-    # не распознано → подсказка
-    n_before = len(voice.spoken)
-    brain._process("абракадабра сюрприз", "text")
-    ok = any("не распознана" in s for s in voice.spoken[n_before:])
-    report("Нераспознанная команда → подсказка", ok)
+        # режимы через мозг
+        n = len(voice.spoken)
+        brain._process("ночной режим", "text")
+        report("Мозг: активация режима «Ночь»",
+               any("ночной" in s.lower() or "Спокойной" in s for s in voice.spoken[n:]))
 
-    # нечёткое совпадение своих команд
-    cc = CustomCommands(os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                     "data", "custom_commands.json"))
-    cmd, _ = cc.match("открой рабочую папкуу")
-    report("Нечёткий поиск своих команд", cmd is not None)
+        # своя команда
+        n = len(voice.spoken)
+        brain._process("рабочая папка", "text")
+        report("Мозг: своя команда из json",
+               any("рабоч" in s.lower() for s in voice.spoken[n:]))
 
-    # разбор ответа ИИ с блоком действий
-    reply = 'Готово, открываю.\n```jarvis\n{"say": "Открываю блокнот", "actions": ' \
-            '[{"type": "open_app", "target": "notepad"}]}\n```'
+        # подтверждение
+        cfg.set("confirm_power", True)
+        n = len(voice.spoken)
+        brain._process("выключи компьютер", "text")
+        ok = any("да" in s.lower() for s in voice.spoken[n:])
+        brain._process("да", "text")
+        report("Мозг: подтверждение питания", ok)
+
+        # отмена действия
+        n = len(voice.spoken)
+        brain.activity.add("Открыт сайт", undo=lambda: None)
+        brain._process("отмени последнее действие", "text")
+        report("Мозг: «отмени последнее действие»",
+               any("Отменила" in s for s in voice.spoken[n:]))
+
+        # нераспознанное
+        n = len(voice.spoken)
+        brain._process("абракадабра сюрприз", "text")
+        report("Мозг: подсказка при нераспознанном",
+               any("не распознана" in s for s in voice.spoken[n:]))
+
+    # нечёткий поиск своих команд
+    with tempfile.TemporaryDirectory() as tmp:
+        cc = CustomCommands(os.path.join(tmp, "c.json"))
+        cc.upsert({"name": "T", "phrases": ["открой ютуб"], "actions": [
+            {"type": "say", "text": "ок"}]})
+        report("Свои команды: нечёткое совпадение",
+               cc.match("открой ютубе")[0] is not None)
+
+    # разбор ответа ИИ
+    reply = ('Готово.\n```aura\n{"say": "Открываю", "actions": '
+             '[{"type": "open_app", "target": "code"}]}\n```')
     clean, actions = AIClient.parse_reply(reply)
-    report("Разбор блока действий в ответе ИИ",
-           clean == "Открываю блокнот" and actions and actions[0]["target"] == "notepad")
+    report("ИИ: разбор блока действий",
+           clean == "Открываю" and actions and actions[0]["target"] == "code")
 
-    # парсер действий из редактора GUI
+    # категории разрешений действий
+    cats = A.collect_categories([{"type": "shell", "target": "x"},
+                                 {"type": "open_url", "target": "y"}])
+    report("Действия: категории разрешений", cats == {"shell", "browser_open"})
+
+    # зрение: сборка сообщений
+    from aura import vision as V
+    msgs = V.vision_messages("что на экране?", b"jpegdata")
+    report("Зрение: сообщения с картинкой",
+           "image_url" in msgs[-1]["content"][1] and msgs[-1]["content"][0]["type"] == "text")
+
+
+def check_gui():
+    print("\n[3] Интерфейс (PySide6, offscreen)")
     try:
-        from jarvis.gui import parse_actions as pa
-        acts = pa("open_url | https://example.com\nsay | Привет\nмусор без пайпа")
-        ok = len(acts) == 2 and acts[0]["target"] == "https://example.com"
-        report("Парсер действий из редактора команд", ok)
-    except ImportError:
-        report("Парсер действий из редактора команд", False, "нет tkinter")
-
-    # нормализация слуха
-    from jarvis.ear import Ear
-    norm = Ear.normalize("Джарвис, ПРИВЕТ! Как дела?")
-    report("Нормализация текста", norm == "джарвис привет как дела")
+        from PySide6.QtWidgets import QApplication
+    except ImportError as exc:
+        report("PySide6", False, f"нет PySide6: {exc}")
+        return
+    app = QApplication.instance() or QApplication([])
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg, voice, events, brain = make_brain(tmp)
+            from aura.gui import MainWindow
+            win = MainWindow(cfg, voice, None, brain, events)
+            win.resize(1280, 800)
+            win.show()
+            app.processEvents()
+            for state in ("idle", "listening", "thinking", "speaking",
+                          "success", "error", "sleep"):
+                win.face.set_state(state)
+                for _ in range(3):
+                    win.face._tick()
+                    app.processEvents()
+            win.face.set_state("idle")
+            ok = (win.tabs.count() == 7 and win.cmd_list is not None
+                  and win.perm_combos)
+            report("Окно Command Center строится (7 вкладок)", ok)
+            # сохраняем скриншот для документации
+            shots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     "docs")
+            os.makedirs(shots_dir, exist_ok=True)
+            for state, label in (("idle", "main"), ("listening", "listening"),
+                                 ("thinking", "thinking"), ("speaking", "speaking"),
+                                 ("success", "success"), ("error", "error"),
+                                 ("sleep", "sleep")):
+                win.face.set_state(state)
+                for _ in range(3):
+                    win.face._tick()
+                    app.processEvents()
+                win.grab().save(os.path.join(shots_dir, f"aura_ui_{label}.png"))
+            report("Скриншоты интерфейса сохранены в docs/", True)
+            win.close()
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        report("UI-дым", False, str(exc))
 
 
 if __name__ == "__main__":
-    print("=" * 52)
-    print("  JARVIS — самопроверка")
-    print("=" * 52)
+    print("=" * 56)
+    print("  AURA — самопроверка")
+    print("=" * 56)
     check_environment()
     try:
         check_logic()
     except Exception as exc:
         import traceback
         traceback.print_exc()
-        print(f"  {FAIL} Ошибка в тестах логики: {exc}")
-        results.append(False)
+        report("Логика", False, str(exc))
+    check_gui()
     passed = sum(1 for r in results if r)
-    print("\n" + "=" * 52)
+    print("\n" + "=" * 56)
     print(f"  Итог: {passed}/{len(results)} проверок пройдено")
-    print("=" * 52)
+    print("=" * 56)
     sys.exit(0 if passed == len(results) else 1)

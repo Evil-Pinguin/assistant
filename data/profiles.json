@@ -1,0 +1,134 @@
+{
+  "profiles": [
+    {
+      "name": "Работа",
+      "icon": "💻",
+      "phrases": [
+        "рабочий режим",
+        "режим работы",
+        "включи работу",
+        "начнём работу"
+      ],
+      "actions": [
+        {
+          "type": "open_app",
+          "target": "code"
+        },
+        {
+          "type": "open_url",
+          "target": "https://mail.google.com"
+        },
+        {
+          "type": "volume",
+          "target": "30"
+        },
+        {
+          "type": "say",
+          "text": "Рабочий режим активирован. Удачной работы!"
+        }
+      ]
+    },
+    {
+      "name": "Игры",
+      "icon": "🎮",
+      "phrases": [
+        "игровой режим",
+        "режим игр",
+        "пора играть",
+        "включи игры"
+      ],
+      "actions": [
+        {
+          "type": "open_app",
+          "target": "steam"
+        },
+        {
+          "type": "open_app",
+          "target": "discord"
+        },
+        {
+          "type": "volume",
+          "target": "60"
+        },
+        {
+          "type": "say",
+          "text": "Игровой режим активирован. Хорошей игры!"
+        }
+      ]
+    },
+    {
+      "name": "Стрим",
+      "icon": "🎥",
+      "phrases": [
+        "режим стрима",
+        "начинаю стрим",
+        "стрим режим"
+      ],
+      "actions": [
+        {
+          "type": "open_app",
+          "target": "obs"
+        },
+        {
+          "type": "open_app",
+          "target": "discord"
+        },
+        {
+          "type": "say",
+          "text": "Стрим режим готов. Удачной трансляции!"
+        }
+      ]
+    },
+    {
+      "name": "Ночь",
+      "icon": "🌙",
+      "phrases": [
+        "ночной режим",
+        "режим ночи",
+        "пора спать"
+      ],
+      "actions": [
+        {
+          "type": "brightness",
+          "target": "40"
+        },
+        {
+          "type": "volume",
+          "target": "20"
+        },
+        {
+          "type": "say",
+          "text": "Ночной режим включён. Спокойной ночи!"
+        }
+      ]
+    },
+    {
+      "name": "Разработка",
+      "icon": "🚀",
+      "phrases": [
+        "режим разработки",
+        "дев режим",
+        "dev environment",
+        "запусти dev environment"
+      ],
+      "actions": [
+        {
+          "type": "open_app",
+          "target": "code"
+        },
+        {
+          "type": "open_app",
+          "target": "terminal"
+        },
+        {
+          "type": "open_url",
+          "target": "https://github.com"
+        },
+        {
+          "type": "say",
+          "text": "Среда разработки готова"
+        }
+      ]
+    }
+  ]
+}

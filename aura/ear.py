@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Слух ассистента: микрофон + распознавание речи.
+"""Слух AURA: микрофон + распознавание речи.
 
 Два движка:
   * google — SpeechRecognition + бесплатный Google Web Speech API (нужен интернет);
   * vosk  — офлайн-распознавание (pip install vosk + модель).
 
 Режимы:
-  * с кодовым словом: сначала «джарвис», затем команда;
+  * с кодовым словом: сначала «аврора», затем команда;
   * прямой: каждая фраза — команда.
 """
 import json
@@ -69,10 +69,10 @@ class Ear:
         return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", text)).strip()
 
     def _match_wake(self, text: str) -> bool:
-        wake = self.normalize(self.config.get("wake_word", "джарвис"))
+        wake = self.normalize(self.config.get("wake_word", "аврора"))
         if not wake:
             return True
-        # «джарвис», «джарвиса», «джарвис слушай» и т.п.
+        # «аврора», «авроры», «аврора слушай» и т.п.
         return any(tok.startswith(wake) for tok in text.split())
 
     # --- распознавание ---
@@ -177,7 +177,7 @@ class Ear:
             if wake_required and not push_talk:
                 if not self._match_wake(norm):
                     continue
-                wake = self.normalize(self.config.get("wake_word", "джарвис"))
+                wake = self.normalize(self.config.get("wake_word", "аврора"))
                 rest = " ".join(t for t in norm.split() if not t.startswith(wake))
                 self.emit("heard", text=text)
                 if rest:                            # команда прозвучала сразу
