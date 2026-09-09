@@ -11,3 +11,6 @@ venv/
 *.png
 !docs/**/*.png
 data/journal.json
+
+# selftest-скриншоты не храним в репо
+docs/aura_ui_*.png
