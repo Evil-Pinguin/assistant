@@ -533,6 +533,16 @@ def h_close_app(t, m, ctx):
     name = (m.group("q") or "").strip()
     if not name:
         return None
+    # «закрой это» → контекст: активное окно
+    from ..context import DEICTIC
+    if name.lower().rstrip(".,!?") in DEICTIC:
+        brain = getattr(ctx, "brain", None)
+        act = brain.context.active_app() if brain is not None else None
+        if not act or not act.get("exe"):
+            return "Не вижу активного окна — скажите имя программы точнее."
+        exe = act["exe"]
+        ctx.log(f"«это» → активное окно: {act.get('title') or exe}")
+        name = exe[:-4] if exe.lower().endswith(".exe") else exe
     name = {"браузер": "chrome", "блокнот": "notepad",
             "диспетчер задач": "taskmgr"}.get(name, name)
     try:
@@ -542,6 +552,58 @@ def h_close_app(t, m, ctx):
         return text + ". Могу вернуть — скажите «отмени»."
     except Exception as exc:
         return f"Не получилось: {exc}"
+
+
+def h_system_status(t, m, ctx):
+    """«что открыто / что с компьютером» — ответ из контекста."""
+    brain = getattr(ctx, "brain", None)
+    if brain is None:
+        return None
+    st = brain.context.system()
+    parts = []
+    if isinstance(st.get("cpu"), (int, float)):
+        parts.append(f"процессор {st['cpu']:.0f}%")
+    if isinstance(st.get("ram"), (int, float)):
+        parts.append(f"память {st['ram']:.0f}%")
+    if st.get("online") is True:
+        parts.append("сеть есть")
+    elif st.get("online") is False:
+        parts.append("сети нет")
+    apps = brain.context.running_apps()
+    reply = ("Сейчас: " + ", ".join(parts) + ".") if parts else ""
+    if apps:
+        reply += " Открыто: " + ", ".join(apps[:6]) + "."
+    proj = brain.context.guess_project()
+    if proj:
+        reply += f" Похоже, работаете с «{proj}»."
+    ram = st.get("ram")
+    if isinstance(ram, (int, float)) and ram >= 90:
+        reply += " Память под нагрузкой — скажите «кто жрёт память», найду."
+    return reply or "Пока не могу прочитать состояние системы."
+
+
+def h_top_processes(t, m, ctx):
+    """«кто жрёт память» — топ-5 процессов по памяти."""
+    try:
+        import psutil
+        procs = []
+        for p in psutil.process_iter(["name", "memory_percent"]):
+            info = p.info
+            procs.append((info.get("name") or "?",
+                          info.get("memory_percent") or 0.0))
+        procs.sort(key=lambda x: x[1], reverse=True)
+        seen, top = set(), []
+        for name, pct in procs:
+            base = name[:-4] if name.lower().endswith(".exe") else name
+            if base.lower() in seen:
+                continue
+            seen.add(base.lower())
+            top.append(f"{base} ({pct:.0f}%)")
+            if len(top) >= 5:
+                break
+        return "Больше всего памяти: " + ", ".join(top) + "."
+    except Exception as exc:
+        return f"Не смогла опросить процессы: {exc}"
 
 
 def h_brightness(t, m, ctx):
@@ -616,6 +678,16 @@ def h_quick_launch(t, m, ctx):
 
 
 # --- фаза 2: «открой …» ---------------------------------------------------
+def _note_open(ctx, desc, actions):
+    """Записать открытие в журнал контекста (для «сделай как вчера»)."""
+    brain = getattr(ctx, "brain", None)
+    if brain is not None:
+        try:
+            brain.context.note("open", desc, actions=actions)
+        except Exception:
+            pass
+
+
 def h_open_generic(t, m, ctx):
     """Фаза 2: «открой/запусти …» — resolver приложений, сайты, файлы, поиск."""
     what = (m.group("what") or "").strip()
@@ -625,9 +697,12 @@ def h_open_generic(t, m, ctx):
         return None
     if what in SITE_MAP:
         _open_url(SITE_MAP[what], ctx.action_ctx)
+        _note_open(ctx, f"сайт: {what}",
+                   [{"type": "open_url", "target": SITE_MAP[what]}])
         return f"Открываю {what}"
     if what.startswith(("http", "www")) or ("." in what and " " not in what):
         _open_url(what, ctx.action_ctx)
+        _note_open(ctx, f"сайт: {what}", [{"type": "open_url", "target": what}])
         return f"Открываю {what}"
     # 1) resolver приложений: алиасы → PATH → ярлыки → запущенные
     from ..resolver import resolve, describe_method
@@ -637,6 +712,8 @@ def h_open_generic(t, m, ctx):
             ctx.log(f"{what}: {describe_method(method)}")
             return f"{what.capitalize()} уже запущено."
         _open_app(target, ctx.action_ctx)
+        _note_open(ctx, f"открыто: {what}",
+                   [{"type": "open_app", "target": target}])
         ctx.log(f"Открываю {what} ({describe_method(method)})")
         return f"Открываю {what}"
     # 2) встроенная таблица приложений
@@ -646,7 +723,20 @@ def h_open_generic(t, m, ctx):
     found = F.find_files(what, ctx.memory, limit=1)
     if found:
         _open_app(found[0], ctx.action_ctx)
+        _note_open(ctx, f"файл: {os.path.basename(found[0])}",
+                   [{"type": "open_file", "target": found[0]}])
         return f"Открываю файл {os.path.basename(found[0])}"
+    # «она не тупит, если не знает»: похожее приложение?
+    from ..resolver import suggest
+    alts = suggest(what, ctx.config, extra=list(APP_TABLE.keys()))
+    brain = getattr(ctx, "brain", None)
+    if alts and brain is not None:
+        opts = [(alt, (lambda t=alt: brain.handle(f"открой {t}")))
+                for alt in alts[:3]]
+        brain._set_choice(f"«{what}» не нашла. Похожее есть:", opts)
+        return None
+    if alts:
+        return f"«{what}» не нашла. Похожее: {', '.join(alts[:3])}."
     _open_url(f"https://www.google.com/search?q={what.replace(' ', '+')}", ctx.action_ctx)
     return f"Локальной команды «{what}» не нашла, ищу в интернете."
 
@@ -735,8 +825,16 @@ def get_skills():
         Skill("screen_click", [r"нажми на (?P<q>.+?)\s*(?:на экране|кнопку)"],
               h_screen_click),
 
-        # --- приложения ---
+        # --- приложения и контекст ПК ---
         Skill("close_app", [r"^(?:закрой|закрыть)\s+(?P<q>.+)$"], h_close_app),
+        Skill("system_status", [r"(что\s+(?:сейчас\s+)?(?:открыто|запущено)|"
+                                r"что\s+с\s+(?:компьютером|системой|памятью)|"
+                                r"состояние\s+(?:системы|компьютера|пк)|"
+                                r"как\s+(?:себя\s+)?чувствует\s+(?:система|компьютер))"],
+              h_system_status),
+        Skill("top_processes", [r"(кто\s+(?:жрёт|ест|тянет|потребляет)\s+(?:память|озу|ресурсы)|"
+                                r"найди\s+(?:прожорлив\w+|тяжёл\w+)\s+(?:процесс\w*|программы?)|"
+                                r"топ\s+процессов)"], h_top_processes),
 
         # --- заметки и быстрые запуски ---
         Skill("notes", [r"(ту ду лист|туду лист|to-do list|to do list|список дел|"

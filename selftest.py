@@ -317,6 +317,134 @@ def check_logic():
     report("Зрение: сообщения с картинкой",
            "image_url" in msgs[-1]["content"][1] and msgs[-1]["content"][0]["type"] == "text")
 
+    # ================= контекст ПК =================
+    import time as _t
+    from aura.context import ContextEngine, evaluate_alerts
+    with tempfile.TemporaryDirectory() as tmp:
+        ce = ContextEngine(config={}, journal_path=os.path.join(tmp, "j.json"))
+        st = ce.system()
+        report("Контекст: снимок системы (CPU/RAM/сеть)",
+               isinstance(st.get("ram"), (int, float)) and 0 <= st["ram"] <= 100
+               and st.get("online") in (True, False, None))
+        ce.note("open", "открыто: код",
+                actions=[{"type": "open_app", "target": "code"}])
+        ce2 = ContextEngine(config={}, journal_path=os.path.join(tmp, "j.json"))
+        report("Контекст: журнал переживает перезапуск",
+               bool(ce2.recent(1)) and ce2.recent(1)[0]["desc"] == "открыто: код")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ce = ContextEngine(config={}, journal_path=os.path.join(tmp, "j.json"))
+        yest = _t.time() - 86400
+        ce._journal.extend([
+            {"ts": yest, "kind": "workflow", "desc": "режим Работа",
+             "actions": [{"type": "open_app", "target": "code"}]},
+            {"ts": yest + 120, "kind": "open", "desc": "сайт: github",
+             "actions": [{"type": "open_url", "target": "https://github.com"}]},
+            {"ts": _t.time(), "kind": "open", "desc": "сегодняшнее",
+             "actions": [{"type": "open_app", "target": "calc"}]},
+        ])
+        s = ce.find_past_session()
+        report("Контекст: «как вчера» находит прошлую сессию",
+               s is not None and len(s["steps"]) == 2
+               and s["steps"][0]["desc"] == "режим Работа")
+
+    codes, _ = evaluate_alerts({"ram": 95, "cpu": 10, "disk_free_pct": 50,
+                                "online": True}, 0, True)
+    codes2, _ = evaluate_alerts({"ram": 50, "cpu": 10, "disk_free_pct": 50,
+                                 "online": False}, 0, True)
+    report("Монитор: пороги RAM и потеря сети",
+           "ram_high" in codes and "net_lost" in codes2)
+    codes3, streak3 = evaluate_alerts({"ram": 50, "cpu": 95, "disk_free_pct": 50,
+                                       "online": True}, 0, True)
+    codes4, _ = evaluate_alerts({"ram": 50, "cpu": 96, "disk_free_pct": 50,
+                                 "online": True}, streak3, True)
+    report("Монитор: CPU — только после двух проверок подряд",
+           "cpu_high" not in codes3 and "cpu_high" in codes4)
+
+    # ================= планировщик =================
+    from aura.planner import Planner, split_sequence
+    report("Планировщик: разбиение последовательности",
+           split_sequence("открой код потом открой браузер")
+           == ["открой код", "открой браузер"])
+    with tempfile.TemporaryDirectory() as tmp:
+        ce = ContextEngine(config={}, journal_path=os.path.join(tmp, "j.json"))
+        ce._journal.append({"ts": _t.time() - 86400, "kind": "workflow",
+                            "desc": "задача",
+                            "actions": [{"type": "open_app", "target": "code"}]})
+        plan = Planner().match("сделай как вчера", context=ce)
+        report("Планировщик: «сделай как вчера» → план с шагами",
+               plan is not None and len(plan.steps) == 1
+               and "1." in plan.prompt())
+        plan2 = Planner().match("подготовь компьютер к работе", profiles=[])
+        report("Планировщик: «подготовь к работе» → шаблон",
+               plan2 is not None and len(plan2.steps) == 2
+               and plan2.steps[0].command == "открой код")
+
+    # ================= красивая ошибка =================
+    from aura.resolver import suggest
+    alts = suggest("фотошопчик",
+                   installed=lambda t: t in ("krita", "gimp", "paint"))
+    report("Resolver: «фотошопчик» → предлагает krita",
+           bool(alts) and alts[0] == "krita")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        cfgx = Config(os.path.join(tmp, "s.json"))
+        from aura.skills.actions import ActionContext, execute_actions
+        ctxx = ActionContext(say=lambda x: None, log=lambda *a, **k: None,
+                             config=cfgx)
+        seen = []
+        execute_actions([{"type": "wait", "target": "0"}], ctxx,
+                        on_step=lambda i, n, a: seen.append((i, n)))
+        report("Действия: колбэк шага (AURA THINKING)", seen == [(1, 1)])
+
+    # ================= мозг: планы и контекст =================
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg, v, ev, brain = make_brain(tmp)
+        brain.context.stop()
+        brain._process("сколько времени потом какое сегодня число", "voice")
+        spoken = " ".join(v.spoken)
+        report("Мозг: последовательность → план с подтверждением",
+               "План" in spoken and "шагов 2" in spoken)
+        v.spoken.clear()
+        brain._process("да")
+        deadline = _t.time() + 6
+        while _t.time() < deadline and not any(
+                "Последовательность" in s for s in v.spoken):
+            _t.sleep(0.05)
+        report("Мозг: план выполняется после «да»",
+               any("Последовательность" in s for s in v.spoken))
+
+        hits = []
+        brain._set_choice("Похожее есть:",
+                          [("один", lambda: hits.append(1)),
+                           ("два", lambda: hits.append(2))])
+        brain._process("два", "voice")
+        deadline = _t.time() + 4
+        while _t.time() < deadline and not hits:
+            _t.sleep(0.05)
+        report("Мозг: выбор варианта по номеру", hits == [2])
+
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg2, v2, ev2, brain2 = make_brain(tmp)
+        brain2.context.stop()
+        brain2.context._journal.append(
+            {"ts": _t.time() - 86400, "kind": "workflow",
+             "desc": "утренний ритуал",
+             "actions": [{"type": "wait", "target": "0"}]})
+        brain2._process("сделай как вчера")
+        report("Мозг: «сделай как вчера» предлагает план",
+               any("Как вчера" in s for s in v2.spoken))
+
+        v2.spoken.clear()
+        brain2._process("что открыто")
+        report("Мозг: «что открыто» отвечает из контекста",
+               any(("Сейчас" in s) or ("Открыто" in s) for s in v2.spoken))
+
+        v2.spoken.clear()
+        brain2._process("закрой это")
+        report("Мозг: «закрой это» без активного окна — вежливый отказ",
+               any("активного окна" in s for s in v2.spoken))
+
 
 def check_gui():
     print("\n[3] Интерфейс (PySide6, offscreen)")
@@ -347,6 +475,13 @@ def check_gui():
             win._toggle_aura_mode()
             win._toggle_aura_mode()
             report("Окно Command Center строится (5 вкладок, AURA MODE)", ok)
+            # метрики/пульс/THINKING вместо фейковой ENERGY
+            has_new = all(hasattr(win, a) for a in ("sys_lbl", "pulse", "think"))
+            report("Интерфейс: CPU/RAM/пульс/THINKING вместо ENERGY",
+                   has_new and not hasattr(win, "energy_lbl"))
+            win._update_bottom()
+            report("Интерфейс: нижняя панель заполнена реальными метриками",
+                   "CPU" in win.sys_lbl.text() and "NET" in win.sys_lbl.text())
             # сохраняем скриншот для документации
             shots_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                      "docs")

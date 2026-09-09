@@ -10,6 +10,7 @@
 
 resolve("браузер") → ("chrome", "alias") | ("C:/.../chrome.exe", "path") | None
 """
+import difflib
 import os
 import shutil
 
@@ -28,6 +29,67 @@ BUILTIN_ALIASES = {
     "дискорд": "discord", "спотифай": "spotify",
     "стим": "steam", "обс": "obs",
 }
+
+# «фотошопчик» → photoshop и т.п.
+SYNONYMS = {
+    "фотошоп": "photoshop", "фотошопчик": "photoshop", "фотошопу": "photoshop",
+    "фотошопа": "photoshop", "ворд": "winword", "эксель": "excel",
+    "почта": "outlook", "телеграм": "telegram", "телегу": "telegram",
+    "вацап": "whatsapp", "ватсап": "whatsapp", "хромиум": "chromium",
+}
+
+# чем можно заменить то, чего обычно нет в системе
+ALTERNATIVES = {
+    "photoshop": ["krita", "gimp", "paint"],
+    "premiere": ["davinci resolve", "shotcut", "openshot"],
+    "winword": ["libreoffice writer", "notepad", "wordpad"],
+    "excel": ["libreoffice calc"],
+    "outlook": ["thunderbird"],
+    "winrar": ["7zip", "7-zip"],
+    "itunes": ["spotify"],
+}
+
+
+def suggest(name, config=None, extra=(), installed=None, limit=3):
+    """Похожие приложения для «красивой ошибки».
+
+    Порядок: синоним → известные замены → difflib по пулу имён.
+    installed(target) -> bool; по умолчанию — resolve().
+    """
+    key = (name or "").strip().lower()
+    if not key:
+        return []
+    registry = (config.get("app_registry") or {}) if config else {}
+    syn = SYNONYMS.get(key)
+    cands = []
+    if syn:
+        cands.append(syn)
+        cands += ALTERNATIVES.get(syn, [])
+    cands += ALTERNATIVES.get(key, [])
+    pool = (list(BUILTIN_ALIASES.keys()) + list(BUILTIN_ALIASES.values())
+            + [k.lower() for k in registry] + [v.lower() for v in registry.values()]
+            + [e.lower() for e in extra])
+    try:
+        cands += difflib.get_close_matches(key, sorted(set(pool)),
+                                           n=limit * 3, cutoff=0.6)
+    except Exception:
+        pass
+    check = installed or (lambda t: resolve(t, config)[0] is not None)
+    seen, out = {key}, []
+    for c in cands:
+        c = str(c).strip().lower()
+        if not c or c in seen:
+            continue
+        seen.add(c)
+        try:
+            if check(c):
+                out.append(c)
+        except Exception:
+            pass
+        if len(out) >= limit:
+            break
+    return out
+
 
 # папки ярлыков Windows
 def _shortcut_dirs():

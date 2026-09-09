@@ -57,6 +57,13 @@ DEFAULTS = {
         "ctrl+3": "unity",
         "ctrl+4": "blender",
     },
+    # --- контекст и проактивность ---
+    "context_monitor": True,         # следить за CPU/RAM/диском/сетью
+    "proactive_voice": True,         # озвучивать находки монитора
+    "context_monitor_interval": 12,  # сек между проверками
+    "ram_alert_pct": 90,             # порог «память кончается»
+    "cpu_alert_pct": 92,             # порог CPU (2 проверки подряд)
+    "disk_alert_pct_free": 10,       # свободно меньше — предупредить
     # --- распознавание: диалог и уверенность ---
     "dialog_followup_sec": 25,       # после ответа AURA слушает без кодового слова
     "stt_min_confidence": 0.5,       # ниже — переспросит

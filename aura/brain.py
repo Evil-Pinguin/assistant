@@ -25,6 +25,8 @@ from .mood import MoodEngine
 from .memory import Memory
 from .permissions import Permissions
 from .activity import Activity
+from .context import ContextEngine
+from .planner import Plan, Planner, Step, describe_action, split_sequence
 from .profiles import Profiles
 from .state import StateMachine
 from . import vision as V
@@ -65,6 +67,12 @@ class Brain:
         self._confirm_lock = threading.Lock()
         self._last_reply_time = 0
         self.state = StateMachine(emit)
+        self.context = ContextEngine(emit, config)
+        self.context.on_alert = self._on_proactive
+        self.planner = Planner()
+        self._pending_choice = None    # (options[(label, fn)], expires)
+        if config.get("context_monitor", True):
+            self.context.start_monitor()
 
     # ------------------------------------------------------------------
     def say(self, text):
@@ -83,7 +91,7 @@ class Brain:
         threading.Thread(target=self._process, args=(text, source),
                          name="aura-brain", daemon=True).start()
 
-    def _process(self, text, source):
+    def _process(self, text, source="voice", depth=0):
         text = (text or "").strip()
         if not text:
             return
@@ -96,6 +104,16 @@ class Brain:
 
         frustrated = self.mood.observe_user(text)
         self.state.set("processing")
+        self.emit("think", text="АНАЛИЗИРУЮ ЗАПРОС")
+
+        # 0) последовательность: «открой X, потом Y» → план
+        if depth == 0:
+            parts = split_sequence(norm)
+            if parts:
+                self._offer_plan(Plan("Последовательность",
+                                      [Step(desc=p, command=p) for p in parts],
+                                      source="sequence"), frustrated)
+                return
 
         # 1) встроенные навыки
         from .skills.builtins import NO_MATCH
@@ -116,6 +134,14 @@ class Brain:
         if prof:
             self._run_profile(prof)
             return
+
+        # 2.5) планировщик: «как вчера», «подготовь компьютер к работе»
+        if depth == 0:
+            plan = self.planner.match(norm, context=self.context,
+                                      profiles=self.profiles, config=self.config)
+            if plan is not None:
+                self._offer_plan(plan, frustrated)
+                return
 
         # 3) пользовательские команды
         cmd, reply = self.custom.match(text)
@@ -202,18 +228,32 @@ class Brain:
             say=self.say, log=self._log, config=self.config,
             permissions=self.permissions, activity=self.activity)
         self.activity.add(f"Задача: {label}", kind="workflow", icon="⚡")
+        real = [a for a in (actions or [])
+                if not (isinstance(a, dict) and a.get("type") == "say")]
+        if real:
+            self.context.note("workflow", label, actions=real)
         self.state.set("executing")
-        ok, failed = A.execute_actions(actions, action_ctx)
+
+        def _step(i, n, action):
+            self.emit("think",
+                      text=f"ШАГ {i}/{n} · {describe_action(action).upper()}")
+
+        ok, failed = A.execute_actions(actions, action_ctx, on_step=_step)
+        self.emit("think", text="")
         if ok and not failed:
             self.state.set("verifying")
+            self.emit("think", text="ПРОВЕРЯЮ РЕЗУЛЬТАТ")
             self.mood.on_success(count=ok)
             self.state.set("success")
+            self.emit("think", text="")
             return f"Готово: {label}."
         if ok:
             self.state.set("success")
+            self.emit("think", text="")
             return f"«{label}»: выполнено {ok}, не удалось {failed}."
         self.state.set("error")
         self.mood.on_error()
+        self.emit("think", text="")
         return f"Не удалось выполнить «{label}»."
 
     def _run_profile(self, prof):
@@ -240,6 +280,9 @@ class Brain:
         mem = self.memory.as_prompt()
         if mem:
             system += "\n" + mem
+        ctx_text = self.context.snapshot_text()
+        if ctx_text:
+            system += "\n" + ctx_text
         system += (f"\nТекущее состояние: настроение {mood['mood']}, энергия "
                    f"{mood['energy']}%.")
         if allow:
@@ -321,14 +364,17 @@ class Brain:
     # ------------------------------------------------------------------
     # Подтверждения
     # ------------------------------------------------------------------
-    def _set_pending(self, prompt, fn):
+    def _set_pending(self, prompt, fn, speak=None):
         self._pending_confirm = (prompt, fn,
                                  datetime.datetime.now().timestamp() + 60)
-        self.say(prompt + " Скажите «да» или «нет».")
+        self.say((speak or prompt) + " Скажите «да» или «нет».")
+        self.emit("ask", text=prompt)
         self.state.set("listening", "Жду подтверждения…")
         self.activity.add(f"Жду подтверждения: {prompt}", kind="confirm", icon="❓")
 
     def _handle_confirmation(self, norm) -> bool:
+        if self._pending_choice:
+            return self._handle_choice(norm)
         if not self._pending_confirm:
             return False
         prompt, fn, expires = self._pending_confirm
@@ -348,6 +394,138 @@ class Brain:
             self.say("Отмена.")
             return True
         return False
+
+    # ---------- выбор из вариантов («похоже есть: krita / gimp») ----------
+    NUM_WORDS = {"один": 1, "первый": 1, "первую": 1, "одну": 1,
+                 "два": 2, "две": 2, "второй": 2, "вторую": 2,
+                 "три": 3, "третий": 3, "третью": 3,
+                 "четыре": 4, "четвёртый": 4, "четвертый": 4,
+                 "пять": 5, "пятый": 5}
+
+    def _set_choice(self, prompt, options):
+        """Вопрос с вариантами [(label, fn), …]. «да» — первый, «2» — второй."""
+        self._pending_choice = (options,
+                                datetime.datetime.now().timestamp() + 60)
+        names = ", ".join(f"{i}. {lbl}" for i, (lbl, _) in enumerate(options, 1))
+        self.say(prompt + " " + names + ". Назовите номер или «нет».")
+        self.emit("ask", text=prompt + "\n" + names)
+        self.state.set("listening", "Жду выбора…")
+        self.activity.add(f"Жду выбора: {prompt} [{names}]",
+                          kind="confirm", icon="❓")
+
+    def _handle_choice(self, norm) -> bool:
+        options, expires = self._pending_choice
+        if datetime.datetime.now().timestamp() > expires:
+            self._pending_choice = None
+            self.say("Время выбора истекло.")
+            return True
+        if re.match(r"^(нет|не|отмена|отмен\w*|стоп|не надо|no)\W*$", norm):
+            self._pending_choice = None
+            self.state.set("idle")
+            self.say("Отмена.")
+            return True
+        pick = None
+        if re.match(r"^(да|давай|ага|ну да|yes|окей|ок|конечно)\W*$", norm):
+            pick = 1
+        else:
+            num = re.match(r"^\W*(\d+)", norm)
+            if num and 1 <= int(num.group(1)) <= len(options):
+                pick = int(num.group(1))
+            else:
+                for w, v in self.NUM_WORDS.items():
+                    if re.search(rf"\b{w}\b", norm):
+                        pick = v
+                        break
+        if pick is None or pick > len(options):
+            return False    # не выбор — обрабатываем как обычную команду
+        self._pending_choice = None
+        label, fn = options[pick - 1]
+        self._log(f"Выбрано: {label}")
+        self.state.set("executing")
+        self.say(self.personality_ack() or "Выполняю.")
+        threading.Thread(target=self._safe_call, args=(fn,), daemon=True).start()
+        return True
+
+    # ---------- планы ----------
+    def _offer_plan(self, plan, frustrated=False):
+        if not plan.steps:
+            self.state.set("idle")
+            msg = ("В журнале не нашла вчерашних действий."
+                   if plan.source == "history" else "Не смогла составить план.")
+            self.say(msg)
+            self._finish(msg, frustrated)
+            return
+        if len(plan.steps) == 1:
+            step = plan.steps[0]
+            if step.command:
+                self._process(step.command, "plan", depth=1)
+                return
+            reply = self._execute_chain(step.actions, plan.title)
+            self._finish(reply, frustrated)
+            return
+        self._log(plan.prompt().replace("\n", " · "))
+        n = len(plan.steps)
+        self._set_pending(f"{plan.prompt()}\nВыполнить?",
+                          lambda: self._run_plan(plan),
+                          speak=f"План «{plan.title}»: шагов {n}. Выполнить?")
+
+    def _run_plan(self, plan):
+        self.state.set("executing")
+        total = len(plan.steps)
+        done = failed_steps = 0
+        self.activity.add(f"План «{plan.title}»: {total} шагов",
+                          kind="workflow", icon="🗂")
+        flat = [a for s in plan.steps if s.actions for a in s.actions]
+        if flat:
+            self.context.note("plan", plan.title, actions=flat)
+        for i, step in enumerate(plan.steps, 1):
+            self.emit("think", text=f"ШАГ {i}/{total} · {step.desc.upper()}")
+            try:
+                if step.command:
+                    self._process(step.command, "plan", depth=1)
+                    done += 1
+                elif step.actions:
+                    ok, bad = A.execute_actions(
+                        step.actions,
+                        A.ActionContext(say=self.say, log=self._log,
+                                        config=self.config,
+                                        permissions=self.permissions,
+                                        activity=self.activity))
+                    if ok and not bad:
+                        done += 1
+                    else:
+                        failed_steps += 1
+                else:
+                    failed_steps += 1
+            except Exception:
+                failed_steps += 1
+        self.emit("think", text="")
+        if failed_steps == 0:
+            self.state.set("verifying")
+            self.emit("think", text="ПРОВЕРЯЮ РЕЗУЛЬТАТ")
+            self.mood.on_success(count=done)
+            self.state.set("success")
+            msg = f"Готово: {plan.title}, все {total} шагов."
+        else:
+            self.state.set("error")
+            self.mood.on_error()
+            msg = f"«{plan.title}»: выполнено шагов {done} из {total}."
+        self._finish(msg)
+
+    # ---------- проактивность ----------
+    def _on_proactive(self, code, text):
+        self.activity.add(text, kind="proactive", icon="⚠")
+        self._log(f"Проактивно: {text}", level="system")
+        self.state.set("alert")
+        if self.config.get("proactive_voice", True):
+            self.say(text)
+        t = threading.Timer(6.0, self._alert_back)
+        t.daemon = True
+        t.start()
+
+    def _alert_back(self):
+        if self.state.state == "alert":
+            self.state.set("idle")
 
     @staticmethod
     def _safe_call(fn):
@@ -372,4 +550,4 @@ class Brain:
         self.say(prefix + reply)
 
     def shutdown(self):
-        pass
+        self.context.stop()

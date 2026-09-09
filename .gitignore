@@ -10,3 +10,4 @@ venv/
 # скриншоты тестового прогона
 *.png
 !docs/**/*.png
+data/journal.json

@@ -550,10 +550,21 @@ def strip_denied(actions, permissions):
     return keep, dropped
 
 
-def execute_actions(actions, ctx: ActionContext):
-    """Выполнить цепочку. Возвращает (успешно, с_ошибками)."""
+def execute_actions(actions, ctx: ActionContext, on_step=None):
+    """Выполнить цепочку. Возвращает (успешно, с_ошибками).
+
+    on_step(i, total, action) — вызывается перед каждым действием
+    (для «AURA THINKING»: ШАГ 2/5 · ОТКРЫТЬ VS CODE).
+    """
     ok = failed = 0
-    for action in actions or []:
+    acts = list(actions or [])
+    total = len(acts)
+    for i, action in enumerate(acts, 1):
+        if on_step:
+            try:
+                on_step(i, total, action)
+            except Exception:
+                pass
         res = execute_action(action, ctx)
         flag = res[0] if isinstance(res, tuple) else res
         if flag:

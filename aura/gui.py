@@ -12,7 +12,7 @@ from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QFrame, QGridLayout,
     QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QMainWindow, QPlainTextEdit, QProgressBar,
+    QListWidget, QListWidgetItem, QMainWindow, QPlainTextEdit,
     QPushButton, QScrollArea, QSlider, QSpinBox, QTabWidget, QTableWidget,
     QTableWidgetItem, QTextBrowser, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
     QWidget, QSizePolicy,
@@ -373,6 +373,12 @@ class MainWindow(QMainWindow):
         self.mood_timer = QTimer(self)
         self.mood_timer.timeout.connect(brain.mood.tick)
         self.mood_timer.start(30_000)
+        self.pulse_timer = QTimer(self)
+        self.pulse_timer.timeout.connect(self._pulse_tick)
+        self.pulse_timer.start(1100)
+        self.bottom_timer = QTimer(self)
+        self.bottom_timer.timeout.connect(self._update_bottom)
+        self.bottom_timer.start(3000)
 
         QTimer.singleShot(300, self._bootstrap)
 
@@ -447,6 +453,12 @@ class MainWindow(QMainWindow):
         self.subtitle.setWordWrap(True)
         self.subtitle.setMinimumHeight(40)
         center.addWidget(self.subtitle)
+        self.think = QLabel("")
+        self.think.setObjectName("dim")
+        self.think.setAlignment(Qt.AlignCenter)
+        self.think.setStyleSheet("font-size: 8pt; letter-spacing: 3px;")
+        self.think.setMinimumHeight(16)
+        center.addWidget(self.think)
 
         # большой круг-кнопка «говорить»
         self.talk_btn = QPushButton("◉  ГОВОРИТЬ")
@@ -527,20 +539,18 @@ class MainWindow(QMainWindow):
         bottom.setContentsMargins(4, 6, 4, 0)
         self.stats = StatLabel()
         bottom.addWidget(self.stats)
-        self.mood_label = QLabel("😐 нейтрально · энергия 87%")
+        self.mood_label = QLabel("😐 нейтрально")
         self.mood_label.setObjectName("dim")
         bottom.addWidget(self.mood_label)
         bottom.addStretch(1)
-        self.energy = QProgressBar()
-        self.energy.setRange(0, 100)
-        self.energy.setValue(87)
-        self.energy.setTextVisible(False)
-        self.energy.setFixedWidth(120)
-        self.energy.setFixedHeight(4)
-        bottom.addWidget(self.energy)
-        self.energy_lbl = QLabel("ENERGY 87%")
-        self.energy_lbl.setObjectName("dim")
-        bottom.addWidget(self.energy_lbl)
+        self.sys_lbl = QLabel("—")
+        self.sys_lbl.setObjectName("dim")
+        bottom.addWidget(self.sys_lbl)
+        self.pulse = QLabel("●")
+        self.pulse.setObjectName("dim")
+        self.pulse.setFixedWidth(18)
+        self.pulse.setAlignment(Qt.AlignCenter)
+        bottom.addWidget(self.pulse)
         root.addLayout(bottom)
 
         # ------------------- строка ввода -------------------
@@ -557,8 +567,9 @@ class MainWindow(QMainWindow):
         self._auramode = not self._auramode
         self.tabs.setVisible(not self._auramode)
         self.input.setVisible(not self._auramode)
-        self.energy.setVisible(not self._auramode)
-        self.energy_lbl.setVisible(not self._auramode)
+        self.sys_lbl.setVisible(not self._auramode)
+        self.pulse.setVisible(not self._auramode)
+        self.think.setVisible(not self._auramode)
         self.perm_badge.setVisible(not self._auramode)
         for w in (self.talk_btn, self.profile_combo):
             w.setVisible(not self._auramode)
@@ -1263,6 +1274,13 @@ class MainWindow(QMainWindow):
             suffix = f"  ·  {int(conf * 100)}%" if isinstance(conf, (int, float)) else ""
             self.subtitle.setText(f"🎙 «{evt['text']}»" + suffix)
             self._recent_push(f"🎙 «{evt['text']}»")
+        elif kind == "think":
+            t = evt.get("text") or ""
+            self.think.setText(("◌ " + t) if t else "")
+        elif kind == "ask":
+            self.subtitle.setText(evt.get("text", ""))
+        elif kind == "proactive":
+            self._recent_push(f"⚠ {evt.get('text', '')}")
         elif kind == "say_start":
             self.face.set_state("speaking")
             self._set_status("Говорю…", "speaking")
@@ -1293,10 +1311,7 @@ class MainWindow(QMainWindow):
                      "curious": "любопытно", "sleepy": "дремлет",
                      "annoyed": "раздражено", "confident": "уверенно",
                      "concerned": "обеспокоена"}
-            energy = int(evt.get("energy", 87))
-            self.mood_label.setText(f"{emoji} {names.get(mood, mood)} · энергия {energy}%")
-            self.energy.setValue(energy)
-            self.energy_lbl.setText(f"ENERGY {energy}%")
+            self.mood_label.setText(f"{emoji} {names.get(mood, mood)}")
             self.face.set_mood(mood, evt.get("energy", 87))
             if mood == "sleepy":
                 self.face.set_state("sleep")
@@ -1313,11 +1328,41 @@ class MainWindow(QMainWindow):
         self.recent.setText("\n".join(lines))
         self.recent.setWhatsThis("\n".join(lines))
 
+    def _pulse_tick(self):
+        """SYSTEM PULSE: точка дышит цветом текущего состояния."""
+        self._pulse_phase = not getattr(self, "_pulse_phase", False)
+        col = STATE_COLORS_UI.get(getattr(self, "_state_name", "idle"), FG_DIM)
+        self.pulse.setStyleSheet(f"color: {col}{'44' if self._pulse_phase else 'FF'};")
+
+    def _update_bottom(self):
+        """Нижняя панель: только реальные параметры — CPU/RAM/сеть/микрофон/ИИ."""
+        try:
+            st = self.brain.context.system()
+        except Exception:
+            return
+        parts = []
+        cpu, ram = st.get("cpu"), st.get("ram")
+        if isinstance(cpu, (int, float)):
+            parts.append(f"CPU {cpu:.0f}%")
+        if isinstance(ram, (int, float)):
+            parts.append(f"RAM {ram:.0f}%" + (" ⚠" if ram >= 90 else ""))
+        net = st.get("online")
+        parts.append("NET ONLINE" if net else
+                     ("NET OFFLINE" if net is False else "NET —"))
+        parts.append("MIC ON" if self.mic_active else "MIC OFF")
+        parts.append("AI ON" if getattr(self.brain.ai, "ready", False) else "AI OFF")
+        self.sys_lbl.setText(" · ".join(parts))
+        hot = isinstance(ram, (int, float)) and ram >= 90
+        self.sys_lbl.setStyleSheet(f"color: {WARN if hot else FG_DIM};")
+
     def _set_status(self, text, state="idle"):
         big = {"listening": "LISTENING", "thinking": "PROCESSING",
                "speaking": "SPEAKING", "success": "DONE ✓", "error": "ERROR",
                "sleep": "SLEEPING", "idle": "READY", "alert": "ATTENTION",
                "off": "OFFLINE"}
+        self._state_name = state
+        if state in ("idle", "success", "error", "off"):
+            self.think.setText("")
         self.state_label.setText(big.get(state, text.upper()))
         self.state_label.setStyleSheet(f"color: {STATE_COLORS_UI.get(state, FG_DIM)};")
         self.dot.setStyleSheet(f"color: {STATE_COLORS_UI.get(state, FG_DIM)};")
